@@ -1,0 +1,150 @@
+version: '3.8'
+
+services:
+  # Appwrite Database and Services
+  appwrite:
+    image: appwrite/appwrite:latest
+    container_name: appwrite
+    restart: unless-stopped
+    ports:
+      - "3001:80"  # Appwrite Console
+      - "3002:443" # Appwrite API (HTTPS)
+    environment:
+      - APPWRITE_HOSTNAME=http://localhost
+      - APPWRITE_PORT=3001
+      - APPWRITE_HTTPS=false
+      - APPWRITE_DB_HOST=mariadb
+      - APPWRITE_DB_PORT=3306
+      - APPWRITE_DB_SCHEMA=appwrite
+      - APPWRITE_DB_USER=appwrite
+      - APPWRITE_DB_PASS=password
+      - APPWRITE_DB_ROOT_PASS=rootpassword
+      - APPWRITE_STORAGE_DEVICE=local
+      - APPWRITE_STORAGE_S3_ACCESS_KEY=
+      - APPWRITE_STORAGE_S3_SECRET=
+      - APPWRITE_STORAGE_S3_REGION=
+      - APPWRITE_STORAGE_S3_BUCKET=
+      - APPWRITE_FUNCTIONS_TIMEOUT=900
+      - APPWRITE_FUNCTIONS_CONTAINERS=1
+      - APPWRITE_FUNCTIONS_CPUS=
+      - APPWRITE_FUNCTIONS_MEMORY=
+      - APPWRITE_FUNCTIONS_LOGGING=enabled
+    volumes:
+      - appwrite_config:/storage/config
+      - appwrite_uploads:/storage/uploads
+    depends_on:
+      - mariadb
+      - redis
+    networks:
+      - appwrite
+
+  # MariaDB Database
+  mariadb:
+    image: mariadb:10.7
+    container_name: appwrite-mariadb
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpassword
+      - MYSQL_DATABASE=appwrite
+      - MYSQL_USER=appwrite
+      - MYSQL_PASSWORD=password
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    networks:
+      - appwrite
+
+  # Redis Cache
+  redis:
+    image: redis:7.0-alpine
+    container_name: appwrite-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - appwrite
+
+  # Next.js Application
+  nextjs:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ecommerce-nextjs
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_APPWRITE_ENDPOINT=https://your-domain.com/v1
+      - NEXT_PUBLIC_APPWRITE_PROJECT_ID=your-production-project-id
+      - NEXT_PUBLIC_APPWRITE_DATABASE_ID=your-production-database-id
+      - NEXT_PUBLIC_APPWRITE_PRODUCTS_COLLECTION_ID=products
+      - NEXT_PUBLIC_APPWRITE_ORDERS_COLLECTION_ID=orders
+      - NEXT_PUBLIC_APPWRITE_CUSTOMERS_COLLECTION_ID=customers
+      - NEXT_PUBLIC_APPWRITE_CATEGORIES_COLLECTION_ID=categories
+      - NEXT_PUBLIC_APPWRITE_ADMIN_USERS_COLLECTION_ID=admin_users
+      - NEXT_PUBLIC_APPWRITE_PRODUCT_IMAGES_BUCKET_ID=product-images
+      - NEXT_PUBLIC_APPWRITE_STORE_ASSETS_BUCKET_ID=store-assets
+      - APPWRITE_API_KEY=your-server-api-key
+      - DATABASE_URL=your-production-database-url
+      - REDIS_URL=redis://redis:6379
+      - SMTP_HOST=your-smtp-host
+      - SMTP_PORT=587
+      - SMTP_USER=your-smtp-user
+      - SMTP_PASS=your-smtp-password
+      - STRIPE_PUBLISHABLE_KEY=pk_live_your-stripe-key
+      - STRIPE_SECRET_KEY=sk_live_your-stripe-secret
+      - JWT_SECRET=your-production-jwt-secret
+      - ENCRYPTION_KEY=your-32-character-encryption-key
+    depends_on:
+      - appwrite
+    networks:
+      - appwrite
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: ecommerce-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - nextjs
+      - appwrite
+    networks:
+      - appwrite
+
+  # Database Backup Service
+  backup:
+    image: alpine:latest
+    container_name: ecommerce-backup
+    restart: unless-stopped
+    volumes:
+      - appwrite_uploads:/backup/appwrite/uploads
+      - mariadb_data:/backup/mysql
+      - ./backups:/backup/destination
+    command: sh -c "while true; do
+        echo 'Creating backup...' &&
+        tar -czf /backup/destination/backup-\$(date +%%Y%%m%%d-%%H%%M%%S).tar.gz /backup/appwrite/uploads /backup/mysql &&
+        echo 'Backup completed' &&
+        sleep 86400; done"  # Daily backups
+    networks:
+      - appwrite
+
+volumes:
+  appwrite_config:
+    driver: local
+  appwrite_uploads:
+    driver: local
+  mariadb_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  appwrite:
+    driver: bridge

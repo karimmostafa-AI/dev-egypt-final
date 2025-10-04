@@ -1,0 +1,144 @@
+@import "tailwindcss/preflight";
+@tailwind utilities;
+
+/* Line clamp utilities */
+.line-clamp-1 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+.line-clamp-2 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.line-clamp-3 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+@layer base {
+  :root {
+    /* Primary Colors */
+    --primary-background: #000000;
+    --primary-foreground: #ffffff;
+    --primary-accent: #0397d5;
+    --primary-error: #d0011b;
+
+    /* Secondary Colors */
+    --secondary-background: #ffffff;
+    --secondary-foreground: #000000;
+    --secondary-light: #f6f6f6;
+    --secondary-medium: #f1f1f1;
+    --secondary-dark: #404040;
+
+    /* Border Colors */
+    --border-primary: #dddddd;
+    --border-secondary: #000000;
+
+    /* Text Colors */
+    --text-primary: #000000;
+    --text-secondary: #404040;
+    --text-accent: #d0011b;
+    --text-inverse: #ffffff;
+
+    /* Background Colors */
+    --bg-main: #ffffff;
+    --bg-secondary: #f6f6f6;
+    --bg-tertiary: #f1f1f1;
+    --bg-accent: #0397d5;
+    --bg-error: #d0011b;
+    --bg-dark: #000000;
+    --bg-light: #dddddd;
+
+    /* Typography Variables */
+    --font-size-xs: 10px;
+    --font-size-sm: 11px;
+    --font-size-base: 12px;
+    --font-size-md: 13px;
+    --font-size-lg: 14px;
+    --font-size-xl: 15px;
+    --font-size-2xl: 16px;
+    --font-size-3xl: 22px;
+    --font-size-4xl: 24px;
+    --font-size-5xl: 32px;
+
+    /* Font Weight Variables */
+    --font-weight-light: 300;
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-bold: 700;
+    --font-weight-extrabold: 800;
+
+    /* Line Height Variables */
+    --line-height-xs: 13px;
+    --line-height-sm: 15px;
+    --line-height-base: 16px;
+    --line-height-md: 17px;
+    --line-height-lg: 18px;
+    --line-height-xl: 19px;
+    --line-height-2xl: 21px;
+    --line-height-3xl: 26px;
+    --line-height-4xl: 29px;
+    --line-height-5xl: 38px;
+
+    /* Spacing Variables */
+    --spacing-xs: 2px;
+    --spacing-sm: 4px;
+    --spacing-base: 6px;
+    --spacing-md: 8px;
+    --spacing-lg: 10px;
+    --spacing-xl: 12px;
+    --spacing-2xl: 14px;
+    --spacing-3xl: 16px;
+    --spacing-4xl: 18px;
+    --spacing-5xl: 20px;
+    --spacing-6xl: 22px;
+    --spacing-7xl: 24px;
+    --spacing-8xl: 26px;
+    --spacing-9xl: 28px;
+    --spacing-10xl: 30px;
+    --spacing-12xl: 32px;
+    --spacing-14xl: 34px;
+    --spacing-16xl: 36px;
+    --spacing-18xl: 38px;
+    --spacing-20xl: 44px;
+    --spacing-22xl: 46px;
+    --spacing-24xl: 50px;
+    --spacing-28xl: 54px;
+    --spacing-32xl: 56px;
+    --spacing-40xl: 80px;
+    --spacing-44xl: 110px;
+    --spacing-48xl: 118px;
+    --spacing-120xl: 482px;
+
+    /* Border Radius Variables */
+    --radius-sm: 6px;
+    --radius-md: 12px;
+    --radius-lg: 14px;
+    --radius-xl: 24px;
+
+    /* Component-specific Colors */
+    --header-bg: #000000;
+    --header-text: #ffffff;
+    --button-bg: #000000;
+    --button-text: #ffffff;
+    --button-border: #000000;
+    --input-bg: #ffffff;
+    --input-text: #404040;
+    --input-border: #dddddd;
+    --search-bg: #ffffff;
+    --search-text: #000000;
+    --line-bg: #dddddd;
+    --link-text: #000000;
+    --link-text-alt: #404040;
+    --checkbox-text: #404040;
+    --icon-button-bg: #000000;
+  }
+}
