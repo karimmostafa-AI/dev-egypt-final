@@ -14,6 +14,47 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get("search") || ""
     const status = searchParams.get("status")
 
+    // Check if Appwrite is properly configured
+    const projectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID
+    const apiKey = process.env.APPWRITE_API_KEY
+    
+    if (!projectId || projectId === 'your-project-id-here' || projectId === 'disabled' || !apiKey || apiKey === 'your-api-key-here' || apiKey === 'disabled') {
+      // Return fallback data when Appwrite is not configured
+      console.warn('Appwrite not configured, returning fallback brand data')
+      const fallbackBrands = [
+        { $id: 'omaima-fallback', name: 'OMAIMA', prefix: 'OMA', status: true, logo_id: null, $createdAt: new Date().toISOString(), $updatedAt: new Date().toISOString() },
+        { $id: 'hleo-fallback', name: 'H LEO', prefix: 'HL', status: true, logo_id: null, $createdAt: new Date().toISOString(), $updatedAt: new Date().toISOString() },
+        { $id: 'seen-fallback', name: 'SEEN', prefix: 'SEEN', status: true, logo_id: null, $createdAt: new Date().toISOString(), $updatedAt: new Date().toISOString() },
+        { $id: 'dev-egypt-fallback', name: 'Dev Egypt', prefix: 'DE', status: true, logo_id: null, $createdAt: new Date().toISOString(), $updatedAt: new Date().toISOString() },
+        { $id: 'cherokee-fallback', name: 'Cherokee', prefix: 'CHE', status: true, logo_id: null, $createdAt: new Date().toISOString(), $updatedAt: new Date().toISOString() },
+        { $id: 'wonderwink-fallback', name: 'WonderWink', prefix: 'WW', status: true, logo_id: null, $createdAt: new Date().toISOString(), $updatedAt: new Date().toISOString() }
+      ]
+      
+      // Apply search filter if provided
+      let filteredBrands = fallbackBrands
+      if (search) {
+        filteredBrands = fallbackBrands.filter(brand => 
+          brand.name.toLowerCase().includes(search.toLowerCase()) ||
+          brand.prefix.toLowerCase().includes(search.toLowerCase())
+        )
+      }
+      
+      // Apply status filter if provided
+      if (status !== null && status !== undefined) {
+        const statusBool = status === "true"
+        filteredBrands = filteredBrands.filter(brand => brand.status === statusBool)
+      }
+      
+      // Apply pagination
+      const paginatedBrands = filteredBrands.slice(offset, offset + limit)
+      
+      return NextResponse.json({
+        brands: paginatedBrands,
+        total: filteredBrands.length,
+        fallback: true
+      })
+    }
+
     // Create admin client
     const { databases } = await createAdminClient()
 

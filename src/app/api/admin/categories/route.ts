@@ -7,72 +7,95 @@ const DATABASE_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || ''
 const CATEGORIES_COLLECTION_ID = 'categories'
 
 export async function GET(request: NextRequest) {
-  const maxRetries = 3;
-  let attempt = 0;
-  
-  while (attempt < maxRetries) {
-    try {
-      const { searchParams } = new URL(request.url)
-      const limit = parseInt(searchParams.get("limit") || "100")
-      const offset = parseInt(searchParams.get("offset") || "0")
-      const search = searchParams.get("search") || ""
-      const status = searchParams.get("status")
+  try {
+    const { searchParams } = new URL(request.url)
+    const limit = parseInt(searchParams.get("limit") || "100")
+    const offset = parseInt(searchParams.get("offset") || "0")
+    const search = searchParams.get("search") || ""
+    const status = searchParams.get("status")
 
-      // Create admin client
-      const { databases } = await createAdminClient()
-
-      // Build queries
-      const queries = [
-        Query.limit(limit),
-        Query.offset(offset),
-        Query.orderAsc('name')
+    // Check if Appwrite is properly configured
+    const projectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID
+    const apiKey = process.env.APPWRITE_API_KEY
+    
+    if (!projectId || projectId === 'your-project-id-here' || projectId === 'disabled' || !apiKey || apiKey === 'your-api-key-here' || apiKey === 'disabled') {
+      // Return fallback data when Appwrite is not configured
+      console.warn('Appwrite not configured, returning fallback category data')
+      const fallbackCategories = [
+        { $id: 'women-fallback', name: 'Women', status: true, $createdAt: new Date().toISOString(), $updatedAt: new Date().toISOString() },
+        { $id: 'men-fallback', name: 'Men', status: true, $createdAt: new Date().toISOString(), $updatedAt: new Date().toISOString() },
+        { $id: 'scrubs-fallback', name: 'Scrubs', status: true, $createdAt: new Date().toISOString(), $updatedAt: new Date().toISOString() },
+        { $id: 'uniforms-fallback', name: 'Uniforms', status: true, $createdAt: new Date().toISOString(), $updatedAt: new Date().toISOString() },
+        { $id: 'medical-fallback', name: 'Medical', status: true, $createdAt: new Date().toISOString(), $updatedAt: new Date().toISOString() },
+        { $id: 'formal-fallback', name: 'Formal', status: true, $createdAt: new Date().toISOString(), $updatedAt: new Date().toISOString() },
+        { $id: 'prints-fallback', name: 'Prints', status: true, $createdAt: new Date().toISOString(), $updatedAt: new Date().toISOString() },
+        { $id: 'footwear-fallback', name: 'Footwear', status: true, $createdAt: new Date().toISOString(), $updatedAt: new Date().toISOString() },
+        { $id: 'accessories-fallback', name: 'Accessories', status: true, $createdAt: new Date().toISOString(), $updatedAt: new Date().toISOString() }
       ]
-
-      // Add search query if provided
+      
+      // Apply search filter if provided
+      let filteredCategories = fallbackCategories
       if (search) {
-        queries.push(Query.search("name", search))
-      }
-
-      // Add status filter if provided
-      if (status !== null && status !== undefined) {
-        queries.push(Query.equal("status", status === "true"))
-      }
-
-      // Fetch categories with timeout
-      const result = await Promise.race([
-        databases.listDocuments(DATABASE_ID, CATEGORIES_COLLECTION_ID, queries),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Request timeout')), 10000)
+        filteredCategories = fallbackCategories.filter(category => 
+          category.name.toLowerCase().includes(search.toLowerCase())
         )
-      ]) as any
-
-      return NextResponse.json({
-        categories: result.documents,
-        total: result.total,
-      })
-
-    } catch (error: any) {
-      attempt++;
-      console.error(`Error fetching categories (attempt ${attempt}/${maxRetries}):`, error.message || error)
-      
-      if (attempt >= maxRetries) {
-        // Return fallback data on final failure
-        console.error("All retry attempts failed, returning fallback data")
-        return NextResponse.json({
-          categories: [
-            { $id: 'fallback-1', name: 'Women', status: true, $createdAt: new Date().toISOString(), $updatedAt: new Date().toISOString() },
-            { $id: 'fallback-2', name: 'Men', status: true, $createdAt: new Date().toISOString(), $updatedAt: new Date().toISOString() },
-            { $id: 'fallback-3', name: 'Scrubs', status: true, $createdAt: new Date().toISOString(), $updatedAt: new Date().toISOString() },
-            { $id: 'fallback-4', name: 'Accessories', status: true, $createdAt: new Date().toISOString(), $updatedAt: new Date().toISOString() }
-          ],
-          total: 4,
-          fallback: true
-        })
       }
       
-      // Wait before retry
-      await new Promise(resolve => setTimeout(resolve, 1000 * attempt))
+      // Apply status filter if provided
+      if (status !== null && status !== undefined) {
+        const statusBool = status === "true"
+        filteredCategories = filteredCategories.filter(category => category.status === statusBool)
+      }
+      
+      // Apply pagination
+      const paginatedCategories = filteredCategories.slice(offset, offset + limit)
+      
+      return NextResponse.json({
+        categories: paginatedCategories,
+        total: filteredCategories.length,
+        fallback: true
+      })
     }
+
+    // Original Appwrite logic (when properly configured)
+    const { databases } = await createAdminClient()
+
+    // Build queries
+    const queries = [
+      Query.limit(limit),
+      Query.offset(offset),
+      Query.orderAsc('name')
+    ]
+
+    // Add search query if provided
+    if (search) {
+      queries.push(Query.search("name", search))
+    }
+
+    // Add status filter if provided
+    if (status !== null && status !== undefined) {
+      queries.push(Query.equal("status", status === "true"))
+    }
+
+    // Fetch categories with timeout
+    const result = await Promise.race([
+      databases.listDocuments(DATABASE_ID, CATEGORIES_COLLECTION_ID, queries),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Request timeout')), 10000)
+      )
+    ]) as any
+
+    return NextResponse.json({
+      categories: result.documents,
+      total: result.total,
+    })
+
+  } catch (error: any) {
+    console.error("Error fetching categories:", error.message || error)
+    return NextResponse.json(
+      { error: error.message || "Failed to fetch categories" },
+      { status: 500 }
+    )
   }
 }
 

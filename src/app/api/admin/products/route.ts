@@ -16,7 +16,123 @@ export async function GET(request: NextRequest) {
     const catalog = searchParams.get("catalog")
     const brand = searchParams.get("brand")
 
-    // Create admin client
+    // Check if Appwrite is properly configured
+    const projectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID
+    const apiKey = process.env.APPWRITE_API_KEY
+    
+    if (!projectId || projectId === 'your-project-id-here' || projectId === 'disabled' || !apiKey || apiKey === 'your-api-key-here' || apiKey === 'disabled') {
+      // Return fallback data when Appwrite is not configured
+      console.warn('Appwrite not configured, returning fallback product data')
+      const fallbackProducts = [
+        {
+          $id: 'omaima-scrub-top-1',
+          name: 'Omaima Premium Scrub Top',
+          slug: 'omaima-premium-scrub-top',
+          media_id: 'https://via.placeholder.com/300x400?text=Omaima+Scrub+Top',
+          brand_id: 'omaima-fallback',
+          category_id: 'scrubs-fallback',
+          units: 1,
+          price: 150,
+          discount_price: 120,
+          min_order_quantity: 1,
+          description: 'Premium quality scrub top from Omaima collection',
+          is_active: true,
+          is_new: true,
+          is_featured: true,
+          meta_title: 'Omaima Premium Scrub Top',
+          meta_description: 'High-quality medical scrub top',
+          meta_keywords: 'scrubs, medical, omaima',
+          $createdAt: new Date().toISOString(),
+          $updatedAt: new Date().toISOString()
+        },
+        {
+          $id: 'omaima-scrub-pants-1',
+          name: 'Omaima Comfortable Scrub Pants',
+          slug: 'omaima-comfortable-scrub-pants',
+          media_id: 'https://via.placeholder.com/300x400?text=Omaima+Scrub+Pants',
+          brand_id: 'omaima-fallback',
+          category_id: 'scrubs-fallback',
+          units: 1,
+          price: 130,
+          discount_price: 100,
+          min_order_quantity: 1,
+          description: 'Comfortable and durable scrub pants from Omaima',
+          is_active: true,
+          is_new: false,
+          is_featured: true,
+          meta_title: 'Omaima Comfortable Scrub Pants',
+          meta_description: 'Durable medical scrub pants',
+          meta_keywords: 'scrubs, medical, omaima, pants',
+          $createdAt: new Date().toISOString(),
+          $updatedAt: new Date().toISOString()
+        },
+        {
+          $id: 'dev-egypt-uniform-1',
+          name: 'Dev Egypt Professional Uniform',
+          slug: 'dev-egypt-professional-uniform',
+          media_id: 'https://via.placeholder.com/300x400?text=Dev+Egypt+Uniform',
+          brand_id: 'dev-egypt-fallback',
+          category_id: 'uniforms-fallback',
+          units: 1,
+          price: 200,
+          discount_price: 0,
+          min_order_quantity: 1,
+          description: 'Professional uniform from Dev Egypt collection',
+          is_active: true,
+          is_new: false,
+          is_featured: false,
+          meta_title: 'Dev Egypt Professional Uniform',
+          meta_description: 'High-quality professional uniform',
+          meta_keywords: 'uniform, professional, dev egypt',
+          $createdAt: new Date().toISOString(),
+          $updatedAt: new Date().toISOString()
+        }
+      ]
+      
+      // Apply filters
+      let filteredProducts = fallbackProducts
+      
+      if (search) {
+        filteredProducts = filteredProducts.filter(product => 
+          product.name.toLowerCase().includes(search.toLowerCase()) ||
+          product.description.toLowerCase().includes(search.toLowerCase())
+        )
+      }
+      
+      if (available !== null && available !== undefined) {
+        const availableBool = available === "true"
+        filteredProducts = filteredProducts.filter(product => product.is_active === availableBool)
+      }
+      
+      if (catalog) {
+        filteredProducts = filteredProducts.filter(product => product.category_id === catalog)
+      }
+      
+      if (brand) {
+        filteredProducts = filteredProducts.filter(product => product.brand_id === brand)
+      }
+      
+      // Apply pagination
+      const paginatedProducts = filteredProducts.slice(offset, offset + limit)
+      
+      // Calculate stats
+      const stats = {
+        total: filteredProducts.length,
+        available: filteredProducts.filter(p => p.is_active).length,
+        unavailable: filteredProducts.filter(p => !p.is_active).length,
+        onSale: filteredProducts.filter(p => p.discount_price > 0 && p.discount_price < p.price).length,
+        totalValue: filteredProducts.reduce((sum, p) => sum + (p.price * 1), 0)
+      }
+      
+      return NextResponse.json({
+        products: paginatedProducts,
+        total: filteredProducts.length,
+        stats,
+        fallback: true
+      })
+    }
+
+    // Original Appwrite logic (when properly configured)
     const { databases } = await createAdminClient()
 
     // Build queries
@@ -50,15 +166,15 @@ export async function GET(request: NextRequest) {
       new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Request timeout')), 15000)
       )
-    ])
+    ]) as any
 
     // Calculate stats
     const stats = {
       total: result.total,
-      available: result.documents.filter(p => p.is_active).length,
-      unavailable: result.documents.filter(p => !p.is_active).length,
-      onSale: result.documents.filter(p => p.discount_price > 0 && p.discount_price < p.price).length,
-      totalValue: result.documents.reduce((sum, p) => sum + (p.price * 1), 0)
+      available: result.documents.filter((p: any) => p.is_active).length,
+      unavailable: result.documents.filter((p: any) => !p.is_active).length,
+      onSale: result.documents.filter((p: any) => p.discount_price > 0 && p.discount_price < p.price).length,
+      totalValue: result.documents.reduce((sum: number, p: any) => sum + (p.price * 1), 0)
     }
 
     return NextResponse.json({

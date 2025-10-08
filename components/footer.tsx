@@ -137,11 +137,7 @@ export default function Footer() {
           </div>
 
           <div className="mt-8 text-center text-[12px] opacity-70">© {new Date().getFullYear()} Dev Egypt. All rights reserved.</div>
-          <div className="mt-6 flex justify-center gap-8">
-            <Image src="/figma/ua-logo.svg" alt="Dev Egypt" width={166} height={46} />
-            <Image src="/figma/ua-corporate.svg" alt="UA Corporate Solutions" width={138} height={53} />
-            <Image src="/figma/chef-uniforms.svg" alt="Chef Uniforms" width={186} height={39} />
-          </div>
+          {/* Removed logos section - replaced with Dev Egypt branding only */}
         </div>
       </section>
     </footer>

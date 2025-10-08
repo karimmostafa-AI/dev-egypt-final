@@ -9,16 +9,20 @@ const projectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || '';
 const client = new Client();
 
 // Configure client for both browser and server environments
-if (endpoint && projectId) {
-  client
-    .setEndpoint(endpoint)
-    .setProject(projectId);
-  
-  console.log('Appwrite client configured:');
-  console.log('Endpoint:', endpoint);
-  console.log('Project ID:', projectId);
+if (endpoint && projectId && endpoint !== 'disabled' && projectId !== 'disabled' && endpoint !== '' && projectId !== '') {
+  try {
+    client
+      .setEndpoint(endpoint)
+      .setProject(projectId);
+    
+    console.log('Appwrite client configured:');
+    console.log('Endpoint:', endpoint);
+    console.log('Project ID:', projectId);
+  } catch (error) {
+    console.warn('Failed to configure Appwrite client:', error);
+  }
 } else {
-  console.warn('Appwrite configuration missing. Please set NEXT_PUBLIC_APPWRITE_ENDPOINT and NEXT_PUBLIC_APPWRITE_PROJECT_ID');
+  console.warn('Appwrite configuration disabled or missing. Running in fallback mode.');
 }
 
 // Browser-specific configuration
@@ -45,18 +49,24 @@ export const createServerClient = () => {
   const serverClient = new sdk.Client();
   const apiKey = process.env.APPWRITE_API_KEY;
 
-  if (endpoint && projectId) {
-    serverClient
-      .setEndpoint(endpoint)
-      .setProject(projectId);
-    
-    // Set API key for server-side operations (user creation, admin tasks)
-    if (apiKey) {
-      serverClient.setKey(apiKey);
-      console.log('Server client configured with API key');
-    } else {
-      console.warn('APPWRITE_API_KEY not set - server operations may fail');
+  if (endpoint && projectId && endpoint !== 'disabled' && projectId !== 'disabled' && endpoint !== '' && projectId !== '') {
+    try {
+      serverClient
+        .setEndpoint(endpoint)
+        .setProject(projectId);
+      
+      // Set API key for server-side operations (user creation, admin tasks)
+      if (apiKey && apiKey !== 'disabled' && apiKey !== '') {
+        serverClient.setKey(apiKey);
+        console.log('Server client configured with API key');
+      } else {
+        console.warn('APPWRITE_API_KEY disabled - server operations will use fallback mode');
+      }
+    } catch (error) {
+      console.warn('Failed to configure server client:', error);
     }
+  } else {
+    console.warn('Appwrite disabled - all operations will use fallback mode');
   }
 
   return serverClient;
@@ -83,10 +93,14 @@ export const STORE_ASSETS_BUCKET_ID = process.env.NEXT_PUBLIC_APPWRITE_STORE_ASS
 export const createClient = () => {
   const client = new Client();
 
-  if (endpoint && projectId) {
-    client
-      .setEndpoint(endpoint)
-      .setProject(projectId);
+  if (endpoint && projectId && endpoint !== 'disabled' && projectId !== 'disabled' && endpoint !== '' && projectId !== '') {
+    try {
+      client
+        .setEndpoint(endpoint)
+        .setProject(projectId);
+    } catch (error) {
+      console.warn('Failed to configure client:', error);
+    }
   }
 
   return client;

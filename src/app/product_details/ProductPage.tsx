@@ -94,13 +94,13 @@ export default function ProductPage() {
     },
     {
       id: '4',
-      name: 'Advantage STRETCH Men\'s 4-Pocket V-Neck Scrub Top',
+      name: 'Dev Egypt STRETCH Men\'s 4-Pocket V-Neck Scrub Top',
       price: 'EGP 1,100.00 - EGP 1,400.00',
       image: '/images/img_advantage_stretch.png'
     },
     {
       id: '5',
-      name: 'Advantage STRETCH Men\'s 5-Pocket V-Neck Air Scrub Top',
+      name: 'Dev Egypt STRETCH Men\'s 5-Pocket V-Neck Air Scrub Top',
       price: 'EGP 965.00',
       image: '/images/img_advantage_stretch_322x216.png'
     }

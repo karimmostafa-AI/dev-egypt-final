@@ -58,7 +58,7 @@ export const fallbackCategories: FallbackCategory[] = [
   },
   {
     $id: 'fallback-cat-3',
-    name: 'Uniforms',
+    name: 'Medical Apparel',
     status: true,
     $createdAt: new Date().toISOString(),
     $updatedAt: new Date().toISOString()

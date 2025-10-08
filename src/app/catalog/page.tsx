@@ -92,6 +92,76 @@ export default function CatalogPage() {
       }
     } catch (error: any) {
       console.error('Failed to fetch products:', error.message || error);
+      // Use fallback products when API fails
+      const fallbackProducts: Product[] = [
+        {
+          $id: 'fallback-p1',
+          name: 'Dev Egypt Professional Scrub Top',
+          slug: 'dev-egypt-professional-scrub-top',
+          price: 299,
+          discount_price: 249,
+          category_id: 'fallback-c1',
+          brand_id: 'fallback-b1',
+          units: 1,
+          min_order_quantity: 1,
+          is_featured: true,
+          is_new: true,
+          is_active: true,
+          media_id: 'https://via.placeholder.com/300x400?text=Scrub+Top',
+          description: 'High-quality professional scrub top',
+          meta_title: 'Dev Egypt Professional Scrub Top',
+          meta_description: 'High-quality professional scrub top for healthcare workers',
+          meta_keywords: 'scrub top, medical scrubs, professional',
+          $createdAt: new Date().toISOString(),
+          $updatedAt: new Date().toISOString()
+        },
+        {
+          $id: 'fallback-p2',
+          name: 'Dev Egypt Comfortable Scrub Pants',
+          slug: 'dev-egypt-comfortable-scrub-pants',
+          price: 199,
+          discount_price: 0,
+          category_id: 'fallback-c2',
+          brand_id: 'fallback-b1',
+          units: 1,
+          min_order_quantity: 1,
+          is_featured: false,
+          is_new: false,
+          is_active: true,
+          media_id: 'https://via.placeholder.com/300x400?text=Scrub+Pants',
+          description: 'Comfortable and durable scrub pants',
+          meta_title: 'Dev Egypt Comfortable Scrub Pants',
+          meta_description: 'Comfortable and durable scrub pants for all-day wear',
+          meta_keywords: 'scrub pants, medical scrubs, comfortable',
+          $createdAt: new Date().toISOString(),
+          $updatedAt: new Date().toISOString()
+        },
+        {
+          $id: 'fallback-p3',
+          name: 'Cherokee Classic Scrub Set',
+          slug: 'cherokee-classic-scrub-set',
+          price: 449,
+          discount_price: 399,
+          category_id: 'fallback-c3',
+          brand_id: 'fallback-b2',
+          units: 1,
+          min_order_quantity: 1,
+          is_featured: true,
+          is_new: false,
+          is_active: true,
+          media_id: 'https://via.placeholder.com/300x400?text=Scrub+Set',
+          description: 'Complete professional scrub set',
+          meta_title: 'Cherokee Classic Scrub Set',
+          meta_description: 'Complete professional scrub set with top and pants',
+          meta_keywords: 'scrub set, cherokee, professional scrubs',
+          $createdAt: new Date().toISOString(),
+          $updatedAt: new Date().toISOString()
+        }
+      ];
+      setProducts(fallbackProducts);
+      setMaxPrice(500);
+      setPriceRange([0, 500]);
+      setFilters(prev => ({ ...prev, priceRange: [0, 500] }));
     }
   };
 
@@ -122,6 +192,14 @@ export default function CatalogPage() {
       setCategories(data.categories || []);
     } catch (error: any) {
       console.error('Failed to fetch categories:', error.message || error);
+      // Use fallback categories when API fails
+      setCategories([
+        { $id: 'fallback-c1', name: 'Scrub Tops', status: true },
+        { $id: 'fallback-c2', name: 'Scrub Pants', status: true },
+        { $id: 'fallback-c3', name: 'Scrub Sets', status: true },
+        { $id: 'fallback-c4', name: 'Lab Coats', status: true },
+        { $id: 'fallback-c5', name: 'Accessories', status: true }
+      ]);
     }
   };
 
@@ -152,6 +230,14 @@ export default function CatalogPage() {
       setBrands(data.brands || []);
     } catch (error: any) {
       console.error('Failed to fetch brands:', error.message || error);
+      // Use fallback brands when API fails
+      setBrands([
+        { $id: 'fallback-b1', name: 'Dev Egypt', prefix: 'DE', status: true },
+        { $id: 'fallback-b2', name: 'Cherokee', prefix: 'CHE', status: true },
+        { $id: 'fallback-b3', name: 'WonderWink', prefix: 'WW', status: true },
+        { $id: 'fallback-b4', name: 'FIGS', prefix: 'FIGS', status: true },
+        { $id: 'fallback-b5', name: 'Jaanuu', prefix: 'JAN', status: true }
+      ]);
     }
   };
 
