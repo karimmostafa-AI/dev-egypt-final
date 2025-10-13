@@ -1,13 +1,21 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { Client, Databases, Storage } from 'appwrite';
 import MainLayout from '../../../components/MainLayout';
 import { useCart } from '../../../context/CartContext';
 import { Product } from '../../../types/product';
 import { ShoppingCart, Heart, Share2, Star, Check, Truck, Shield, RotateCcw } from 'lucide-react';
 import Link from 'next/link';
 import CurrencyConverter from '../../../components/CurrencyConverter';
+import ProductErrorBoundary from '../../../components/ui/ProductErrorBoundary';
+import Image from 'next/image';
+import { Button } from '../../../components/ui/button';
+import { useProductDetails } from '../../../hooks/useProductDetails';
+import { PageLoadingSpinner, ProgressiveLoader } from '../../../components/ui/LoadingStates';
+import EnhancedImageGallery from '../../../components/ui/EnhancedImageGallery';
+import RelatedProducts from '../../../components/ui/RelatedProducts';
 
 interface Brand {
   $id: string;
@@ -28,89 +36,327 @@ export default function ProductDetailPage() {
   const slug = params.slug as string;
   const { addToCart, isInCart } = useCart();
 
-  const [product, setProduct] = useState<Product | null>(null);
+  // Initialize Appwrite client with debugging
+  console.log('🔧 Initializing Appwrite client for product page');
+  console.log('Environment check:', {
+    endpoint: process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT,
+    projectId: process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID,
+    databaseId: process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID
+  });
+
+  const client = useMemo(() => new Client()
+    .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1')
+    .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || ''), []);
+
+  console.log('✅ Appwrite client initialized');
+
+  const databases = useMemo(() => new Databases(client), [client]);
+  const storage = useMemo(() => new Storage(client), [client]);
+
+  // Use the enhanced product details hook
+  console.log('🎣 Calling useProductDetails with slug:', slug);
+
+  const {
+    product: dynamicProduct,
+    loading,
+    error,
+    selectedVariations,
+    selectedColor,
+    selectedSize,
+    quantity,
+    currentImageIndex,
+    pricing,
+    availability,
+    processedImages,
+    setSelectedColor,
+    setSelectedSize,
+    setQuantity,
+    setCurrentImageIndex,
+    setSelectedVariations,
+    handleVariationChange,
+    refetch
+  } = useProductDetails(slug, databases, storage);
+
+  // Debug hook return values
+  console.log('📊 Hook returned values:', {
+    hasProduct: !!dynamicProduct,
+    loading,
+    hasError: !!error,
+    errorMessage: error,
+    slug
+  });
+
   const [brand, setBrand] = useState<Brand | null>(null);
   const [category, setCategory] = useState<Category | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [quantity, setQuantity] = useState(1);
-  const [selectedSize, setSelectedSize] = useState<string>('');
-  const [selectedColor, setSelectedColor] = useState<string>('');
   const [addedToCart, setAddedToCart] = useState(false);
+  const [addEmbroidery, setAddEmbroidery] = useState(false);
+  const [featuresExpanded, setFeaturesExpanded] = useState(true);
 
-  // Fetch product by slug
+  // Fallback static product data
+  const staticProduct: Product = {
+    $id: 'BSS577',
+    name: 'Butter-Soft STRETCH Men\'s 4-Pocket V-Neck Scrub Top',
+    slug: 'yellow-shirt',
+    brand_id: 'brand1',
+    category_id: 'cat1',
+    units: 100,
+    price: 26.99,
+    discount_price: 11.91,
+    min_order_quantity: 1,
+    description: 'Premium medical scrubs with 4 pockets, classic fit, and 2-way stretch comfort fabric.',
+    is_active: true,
+    is_new: false,
+    is_featured: true,
+    hasVariations: true,
+    variations: 'color,size',
+    colorOptions: 'Royal,Navy,Black,White,Gray,Teal,Purple,Green',
+    sizeOptions: 'XS,S,M,L,XL,2X,3X,4X,5X',
+    mainImageUrl: '/figma/product-images/main-product-royal.png',
+    media_id: 'main-product-royal.png',
+    $createdAt: new Date().toISOString(),
+    $updatedAt: new Date().toISOString()
+  };
+
+  // Use dynamic data if available, otherwise fall back to static data
+  const product = dynamicProduct || staticProduct;
+  const isUsingStaticData = !dynamicProduct;
+
+  console.log('🎯 Final product decision:', {
+    slug,
+    usingStaticData: isUsingStaticData,
+    hasDynamicProduct: !!dynamicProduct,
+    hasStaticProduct: !!staticProduct,
+    productName: product?.name,
+    productId: isUsingStaticData ? (product as any)?.$id : (product as any)?.id,
+    hasVariations: !!product.variations,
+    variationsType: Array.isArray(product.variations) ? 'array' : typeof product.variations,
+    variationsCount: Array.isArray(product.variations) ? product.variations.length : 0,
+    loading,
+    error
+  });
+
+  // Memoize the product to prevent unnecessary re-renders
+  const memoizedProduct = useMemo(() => product, [(product as any)?.$id || (product as any)?.id, product?.name, product?.price]);
+
+  // Fetch additional data (brand, category) for both static and dynamic products
   useEffect(() => {
-    const fetchProduct = async () => {
+    const fetchAdditionalData = async () => {
       try {
-        setLoading(true);
-        
-        // Fetch all products and find by slug
-        const response = await fetch('/api/admin/products?available=true&limit=100');
-        const data = await response.json();
-        
-        if (data.error) {
-          console.error('Error fetching products:', data.error);
-          return;
-        }
-
-        const foundProduct = data.products?.find((p: Product) => p.slug === slug);
-        
-        if (!foundProduct) {
-          router.push('/404');
-          return;
-        }
-
-        setProduct(foundProduct);
-
         // Fetch brand details
-        if (foundProduct.brand_id) {
-          const brandResponse = await fetch(`/api/admin/brands?status=true`);
-          const brandData = await brandResponse.json();
-          const productBrand = brandData.brands?.find((b: Brand) => b.$id === foundProduct.brand_id);
-          setBrand(productBrand || null);
-        }
+        if (isUsingStaticData) {
+          // For static data, use mock brand/category
+          setBrand({ $id: 'brand1', name: 'Butter-Soft', prefix: 'BS', status: true } as Brand);
+          setCategory({ $id: 'cat1', name: 'Medical Scrubs', status: true } as Category);
+        } else {
+          const dynamicProd = product as any;
+          if (dynamicProd.brand_id) {
+            const brandResponse = await fetch(`/api/admin/brands?status=true`);
+            const brandData = await brandResponse.json();
+            const productBrand = brandData.brands?.find((b: Brand) => b.$id === dynamicProd.brand_id);
+            setBrand(productBrand || null);
+          }
 
-        // Fetch category details
-        if (foundProduct.category_id) {
-          const categoryResponse = await fetch(`/api/admin/categories?status=true`);
-          const categoryData = await categoryResponse.json();
-          const productCategory = categoryData.categories?.find((c: Category) => c.$id === foundProduct.category_id);
-          setCategory(productCategory || null);
+          if (dynamicProd.category_id) {
+            const categoryResponse = await fetch(`/api/admin/categories?status=true`);
+            const categoryData = await categoryResponse.json();
+            const productCategory = categoryData.categories?.find((c: Category) => c.$id === dynamicProd.category_id);
+            setCategory(productCategory || null);
+          }
         }
 
       } catch (error) {
-        console.error('Failed to fetch product:', error);
-        router.push('/404');
-      } finally {
-        setLoading(false);
+        console.error('Failed to fetch additional data:', error);
       }
     };
 
-    if (slug) {
-      fetchProduct();
+    if (memoizedProduct) {
+      fetchAdditionalData();
     }
-  }, [slug, router]);
+  }, [memoizedProduct, isUsingStaticData]);
 
   const handleAddToCart = () => {
     if (product) {
-      addToCart(product, quantity, selectedSize, selectedColor);
+      // Use pricing from the hook if available, otherwise fall back to static calculation
+      let totalPrice: number;
+
+      if (!isUsingStaticData && pricing) {
+        totalPrice = pricing.finalPrice;
+
+        // Add embroidery cost if selected
+        if (addEmbroidery && (product as any).embroidery_available) {
+          const embroideryPrice = (product as any).embroidery_price || 7.99;
+          totalPrice += embroideryPrice;
+        }
+      } else {
+        // Fallback to static calculation for static data or when pricing is not available
+        totalPrice = isUsingStaticData
+          ? parseFloat((product as Product).price.toString())
+          : (product as any).discount_price > 0 ? (product as any).discount_price : (product as any).price;
+
+        // Add price modifiers from selected variations
+        Object.entries(selectedVariations).forEach(([groupId, optionId]) => {
+          if (isUsingStaticData) {
+            if (groupId === 'size' && ['2X', '3X', '4X', '5X'].includes(optionId)) {
+              totalPrice += 50;
+            }
+          } else {
+            const variation = (product as any).variations.find((v: any) => v.id === optionId);
+            if (variation) {
+              totalPrice += variation.price_modifier;
+            }
+          }
+        });
+
+        // Add embroidery cost if selected
+        if (addEmbroidery && (isUsingStaticData || (product as any).embroidery_available)) {
+          const embroideryPrice = isUsingStaticData ? 7.99 : (product as any).embroidery_price;
+          totalPrice += embroideryPrice;
+        }
+      }
+
+      // Convert to Product type for cart
+      const cartProduct: Product = {
+        $id: isUsingStaticData ? (product as Product).$id : (product as any).id,
+        name: product.name,
+        slug: product.slug || 'yellow-shirt',
+        brand_id: isUsingStaticData ? (product as Product).brand_id : (product as any).brand_id,
+        category_id: isUsingStaticData ? (product as Product).category_id : (product as any).category_id,
+        units: isUsingStaticData ? (product as Product).units : (product as any).stock_quantity || 100,
+        price: totalPrice,
+        discount_price: 0,
+        min_order_quantity: 1,
+        description: product.description || 'Product description',
+        is_active: true,
+        is_new: false,
+        is_featured: false,
+        hasVariations: true,
+        variations: 'color,size',
+        colorOptions: 'Royal,Navy,Black,White,Gray,Teal,Purple,Green',
+        sizeOptions: 'XS,S,M,L,XL,2X,3X,4X,5X',
+        mainImageUrl: '/figma/product-images/main-product-royal.png',
+        media_id: 'main-product-royal.png',
+        $createdAt: new Date().toISOString(),
+        $updatedAt: new Date().toISOString()
+      };
+
+      addToCart(cartProduct, quantity, selectedSize, selectedColor);
       setAddedToCart(true);
       setTimeout(() => setAddedToCart(false), 3000);
     }
   };
 
-  // Helper function to determine if media_id is a URL or Appwrite file ID
-  const getImageSrc = (mediaId: string) => {
-    // Check if it's a URL (starts with http:// or https://)
-    if (mediaId.startsWith('http://') || mediaId.startsWith('https://')) {
-      return mediaId;
+  // Helper function to get the correct image source from product data (same logic as catalog)
+  const getImageSrc = (product: Product) => {
+    // First, check if product has mainImageUrl (this is the primary field used)
+    if ((product as any).mainImageUrl) {
+      // If it's already a full URL (starts with http), return as-is
+      if ((product as any).mainImageUrl.startsWith('http://') || (product as any).mainImageUrl.startsWith('https://')) {
+        return (product as any).mainImageUrl;
+      }
+      // If it's a blob URL, return as-is (these are temporary and may fail)
+      if ((product as any).mainImageUrl.startsWith('blob:')) {
+        console.log(`[DEBUG] Using blob URL for main image: ${(product as any).mainImageUrl}`);
+        return (product as any).mainImageUrl;
+      }
+      // Otherwise, it's likely already a full API path, return as-is
+      return (product as any).mainImageUrl;
     }
-    // Otherwise, treat it as an Appwrite file ID
-    return `/api/storage/files/${mediaId}/view`;
+
+    // Check if product has mainImageId (fallback)
+    if ((product as any).mainImageId) {
+      return `/uploads/images/${(product as any).mainImageId}`;
+    }
+
+    // Check if product has featuredImageId
+    if ((product as any).featuredImageId) {
+      return `/uploads/images/${(product as any).featuredImageId}`;
+    }
+
+    // Check if product has media_id (legacy field)
+    if ((product as any).media_id) {
+      // Check if it's a URL (starts with http:// or https://)
+      if ((product as any).media_id.startsWith('http://') || (product as any).media_id.startsWith('https://')) {
+        return (product as any).media_id;
+      }
+      // Otherwise, treat it as a file ID
+      return `/uploads/images/${(product as any).media_id}`;
+    }
+
+    // Default fallback for products without images
+    return 'https://via.placeholder.com/400x600?text=No+Image';
   };
 
-  const currentPrice = product && product.discount_price > 0 ? product.discount_price : product?.price || 0;
-  const savings = product && product.discount_price > 0 ? product.price - product.discount_price : 0;
-  const savingsPercent = savings > 0 && product ? Math.round((savings / product.price) * 100) : 0;
+  // Get all product images for gallery with color variation support
+  const getProductImages = (product: any) => {
+    const images: Array<{ src: string; alt: string; color?: string; isMain?: boolean }> = [];
+
+    console.log('🖼️ Getting product images:', {
+      hasImages: !!product.images,
+      isArray: Array.isArray(product.images),
+      imageCount: product.images?.length,
+      hasMainImageUrl: !!product.mainImageUrl,
+      isUsingStatic: isUsingStaticData
+    });
+
+    // If we have images array from ProductRepository
+    if (product.images && Array.isArray(product.images)) {
+      product.images.forEach((img: any, index: number) => {
+        images.push({
+          src: img.url,
+          alt: img.alt_text || `${product.name} - view ${index + 1}`,
+          color: img.variation_value && img.variation_value !== 'Default' ? img.variation_value : undefined,
+          isMain: img.image_type === 'main'
+        });
+      });
+    } else {
+      // Fallback to old method for static products
+      const mainImageSrc = getImageSrc(product);
+      if (mainImageSrc && !mainImageSrc.includes('placeholder')) {
+        images.push({
+          src: mainImageSrc,
+          alt: `${product.name} - main view`,
+          isMain: true
+        });
+      }
+      
+      // For static products, add back image if available
+      if (isUsingStaticData && product.mainImageUrl) {
+        const backImageUrl = product.mainImageUrl.replace('main-product', 'back-product');
+        if (backImageUrl !== mainImageSrc) {
+          images.push({
+            src: backImageUrl,
+            alt: `${product.name} - back view`,
+            isMain: false
+          });
+        }
+      }
+    }
+
+    // Fallback to placeholder if no images found
+    if (images.length === 0) {
+      images.push({
+        src: 'https://via.placeholder.com/400x600?text=No+Image+Available',
+        alt: `${product.name} - no image available`,
+        isMain: true
+      });
+    }
+
+    console.log('✅ Product images prepared:', images.length, 'images');
+    return images;
+  };
+
+  // Use pricing from hook if available, otherwise calculate from product data
+  const currentPrice = (!isUsingStaticData && pricing)
+    ? pricing.basePrice
+    : (product && product.discount_price > 0 ? product.discount_price : product?.price || 0);
+
+  const savings = (!isUsingStaticData && pricing)
+    ? pricing.savings
+    : (product && product.discount_price > 0 ? product.price - product.discount_price : 0);
+
+  const savingsPercent = (!isUsingStaticData && pricing)
+    ? pricing.savingsPercent
+    : (savings > 0 && product ? Math.round((savings / product.price) * 100) : 0);
 
   if (loading) {
     return (
@@ -134,7 +380,44 @@ export default function ProductDetailPage() {
   }
 
   if (!product) {
-    return null;
+    return (
+      <MainLayout>
+        <div className="min-h-screen bg-gray-50 py-8">
+          <div className="max-w-[1920px] mx-auto px-[50px]">
+            <div className="text-center py-16">
+              <div className="mb-6">
+                <div className="text-6xl mb-4">🔍</div>
+                <h1 className="text-2xl font-bold text-gray-900 mb-2">Product Not Found</h1>
+                <p className="text-gray-600 mb-6">
+                  The product "{slug}" could not be found or may no longer be available.
+                </p>
+                {error && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 text-left">
+                    <h3 className="font-semibold text-red-800 mb-2">Error Details:</h3>
+                    <p className="text-red-700 text-sm">{error}</p>
+                  </div>
+                )}
+              </div>
+              <div className="space-y-4">
+                <Link href="/catalog">
+                  <button className="bg-[#173a6a] text-white px-6 py-3 rounded-md font-semibold hover:bg-[#1e4a7a] transition-colors">
+                    Browse All Products
+                  </button>
+                </Link>
+                <div>
+                  <button
+                    onClick={() => window.location.reload()}
+                    className="text-[#173a6a] hover:text-[#1e4a7a] font-medium"
+                  >
+                    Try Again
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </MainLayout>
+    );
   }
 
   return (
@@ -159,60 +442,25 @@ export default function ProductDetailPage() {
           </nav>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-            {/* Product Images */}
-            <div className="space-y-4">
-              <div className="bg-white rounded-lg overflow-hidden shadow-lg sticky top-8">
-                <div className="aspect-square bg-gray-100 flex items-center justify-center relative group">
-                  {product.media_id ? (
-                    <img
-                      src={getImageSrc(product.media_id)}
-                      alt={product.name}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        // Fallback to placeholder if image fails to load
-                        e.currentTarget.style.display = 'none';
-                        const fallback = e.currentTarget.parentElement?.querySelector('.fallback-icon');
-                        if (fallback) fallback.classList.remove('hidden');
-                      }}
-                    />
-                  ) : null}
-                  {/* Fallback icon - shown if no media_id or image fails to load */}
-                  <div className={`text-gray-400 text-6xl fallback-icon ${product.media_id ? 'hidden' : ''}`}>📦</div>
-                  
-                  {/* Badges */}
-                  <div className="absolute top-4 left-4 flex flex-col gap-2">
-                    {product.is_featured && (
-                      <span className="flex items-center gap-1 px-3 py-1 text-sm font-medium bg-yellow-100 text-yellow-800 rounded">
-                        <Star className="h-4 w-4" />
-                        Featured
-                      </span>
-                    )}
-                    {product.is_new && (
-                      <span className="px-3 py-1 text-sm font-medium bg-blue-100 text-blue-800 rounded">
-                        New Arrival
-                      </span>
-                    )}
-                    {savingsPercent > 0 && (
-                      <span className="px-3 py-1 text-sm font-medium bg-red-500 text-white rounded">
-                        Save {savingsPercent}%
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Wishlist & Share */}
-                  <div className="absolute top-4 right-4 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button className="p-3 bg-white rounded-full shadow-md hover:bg-gray-50">
-                      <Heart className="h-5 w-5 text-gray-600" />
-                    </button>
-                    <button className="p-3 bg-white rounded-full shadow-md hover:bg-gray-50">
-                      <Share2 className="h-5 w-5 text-gray-600" />
-                    </button>
-                  </div>
+            {/* Enhanced Product Images */}
+            <ProductErrorBoundary>
+              <div className="space-y-4">
+                {/* Enhanced Image Gallery */}
+                <div className="bg-white rounded-lg overflow-hidden shadow-lg sticky top-8">
+                  <EnhancedImageGallery
+                    images={getProductImages(product)}
+                    selectedColor={selectedColor}
+                    onColorChange={setSelectedColor}
+                    className="w-full"
+                    priority={true}
+                    enableZoom={true}
+                    enableFullscreen={true}
+                  />
                 </div>
               </div>
-            </div>
+            </ProductErrorBoundary>
 
-            {/* Product Info */}
+            {/* Enhanced Product Info */}
             <div className="space-y-6">
               {/* Brand */}
               {brand && (
@@ -232,24 +480,234 @@ export default function ProductDetailPage() {
                   <span className="text-4xl font-bold text-[#173a6a]">
                     ${currentPrice.toFixed(2)}
                   </span>
-                  {savings > 0 && (
-                    <>
-                      <span className="text-2xl text-gray-500 line-through">
-                        ${product.price.toFixed(2)}
-                      </span>
-                      <span className="text-lg font-medium text-red-600">
-                        Save ${savings.toFixed(2)}
-                      </span>
-                    </>
+                  {isUsingStaticData ? (
+                    <span className="text-2xl text-gray-500 line-through">
+                      ${(product as Product).price * 1.2}
+                    </span>
+                  ) : (
+                    savings > 0 && (
+                      <>
+                        <span className="text-2xl text-gray-500 line-through">
+                          ${product.price.toFixed(2)}
+                        </span>
+                        <span className="text-lg font-medium text-red-600">
+                          Save ${savings.toFixed(2)}
+                        </span>
+                      </>
+                    )
                   )}
                 </div>
-                {product.units > 0 && (
-                  <p className="text-sm text-green-600 mt-2 flex items-center gap-2">
-                    <Check className="h-4 w-4" />
-                    In Stock ({product.units} available)
-                  </p>
-                )}
+                <p className="text-sm text-green-600 mt-2 flex items-center gap-2">
+                  <Check className="h-4 w-4" />
+                  {(!isUsingStaticData && availability)
+                    ? (availability.isAvailable ? `In Stock (${availability.stockQuantity} available)` : 'Out of Stock')
+                    : `In Stock (${isUsingStaticData ? '100' : (product as any).units || '100'} available)`
+                  }
+                </p>
               </div>
+
+              {/* Enhanced Product Variations - Dynamic */}
+              <ProductErrorBoundary>
+                <div className="space-y-6">
+                  {/* Color Selection - Dynamic from product data */}
+                  {(!isUsingStaticData && product.variations) ? (() => {
+                    // Get unique colors from variations
+                    const colorVariations = product.variations.filter((v: any) => 
+                      v.variation_type === 'color' && v.is_active
+                    );
+                    
+                    // Remove duplicates
+                    const uniqueColors = colorVariations.filter((v: any, index: number, self: any[]) => 
+                      self.findIndex(t => t.variation_value === v.variation_value) === index
+                    );
+
+                    if (uniqueColors.length === 0) return null;
+
+                    return (
+                      <div className="space-y-4">
+                        <h3 className="text-lg font-semibold text-gray-900">Color Selection</h3>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                          {uniqueColors.map((colorVariation: any) => {
+                            const colorName = colorVariation.variation_value;
+                            const isSelected = selectedColor === colorName;
+                            const inStock = colorVariation.stock_quantity > 0;
+                            
+                            // Generate color CSS class from color name
+                            const getColorBg = (colorName: string) => {
+                              const colorMap: { [key: string]: string } = {
+                                'Royal': 'bg-blue-600',
+                                'Navy': 'bg-blue-900',
+                                'Black': 'bg-black',
+                                'White': 'bg-gray-100 border border-gray-300',
+                                'Gray': 'bg-gray-500',
+                                'Teal': 'bg-teal-600',
+                                'Purple': 'bg-purple-600',
+                                'Green': 'bg-green-600',
+                                'Red': 'bg-red-600',
+                                'Pink': 'bg-pink-600',
+                                'Blue': 'bg-blue-500',
+                                'Yellow': 'bg-yellow-500',
+                                'Orange': 'bg-orange-500'
+                              };
+                              return colorMap[colorName] || 'bg-gray-300';
+                            };
+
+                            return (
+                              <button
+                                key={colorVariation.id}
+                                onClick={() => setSelectedColor(colorName)}
+                                disabled={!inStock}
+                                className={`p-3 rounded-lg border-2 transition-all ${
+                                  isSelected
+                                    ? 'border-blue-600 ring-2 ring-blue-600 ring-opacity-50'
+                                    : 'border-gray-200 hover:border-gray-300'
+                                } ${!inStock ? 'opacity-50 cursor-not-allowed' : ''}`}
+                              >
+                                <div className={`w-full h-12 ${getColorBg(colorName)} rounded mb-2`}></div>
+                                <div className="text-center">
+                                  <p className="font-medium text-gray-900 text-sm">{colorName}</p>
+                                  <p className={`text-xs ${
+                                    inStock ? 'text-green-600' : 'text-red-600'
+                                  }`}>
+                                    {inStock ? 'In Stock' : 'Out of Stock'}
+                                  </p>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })() : (isUsingStaticData && (product as Product).colorOptions) ? (
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-semibold text-gray-900">Color Selection</h3>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                        {(product as Product).colorOptions.split(',').map((color: string) => {
+                          const colorName = color.trim();
+                          const isSelected = selectedColor === colorName;
+                          
+                          const getColorBg = (colorName: string) => {
+                            const colorMap: { [key: string]: string } = {
+                              'Royal': 'bg-blue-600',
+                              'Navy': 'bg-blue-900',
+                              'Black': 'bg-black',
+                              'White': 'bg-gray-100 border border-gray-300',
+                              'Gray': 'bg-gray-500',
+                              'Teal': 'bg-teal-600',
+                              'Purple': 'bg-purple-600',
+                              'Green': 'bg-green-600',
+                              'Red': 'bg-red-600',
+                              'Pink': 'bg-pink-600',
+                              'Blue': 'bg-blue-500',
+                              'Yellow': 'bg-yellow-500',
+                              'Orange': 'bg-orange-500'
+                            };
+                            return colorMap[colorName] || 'bg-gray-300';
+                          };
+
+                          return (
+                            <button
+                              key={colorName}
+                              onClick={() => setSelectedColor(colorName)}
+                              className={`p-3 rounded-lg border-2 transition-all ${
+                                isSelected
+                                  ? 'border-blue-600 ring-2 ring-blue-600 ring-opacity-50'
+                                  : 'border-gray-200 hover:border-gray-300'
+                              }`}
+                            >
+                              <div className={`w-full h-12 ${getColorBg(colorName)} rounded mb-2`}></div>
+                              <div className="text-center">
+                                <p className="font-medium text-gray-900 text-sm">{colorName}</p>
+                                <p className="text-xs text-green-600">In Stock</p>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* Size Selection - Dynamic from product data */}
+                  {(!isUsingStaticData && product.variations) ? (() => {
+                    // Get unique sizes from variations
+                    const sizeVariations = product.variations.filter((v: any) => 
+                      v.variation_type === 'size' && v.is_active
+                    );
+                    
+                    // Remove duplicates
+                    const uniqueSizes = sizeVariations.filter((v: any, index: number, self: any[]) => 
+                      self.findIndex(t => t.variation_value === v.variation_value) === index
+                    );
+
+                    if (uniqueSizes.length === 0) return null;
+
+                    return (
+                      <div className="space-y-4">
+                        <h3 className="text-lg font-semibold text-gray-900">Size Selection</h3>
+                        <div className="flex flex-wrap gap-2">
+                          {uniqueSizes.map((sizeVariation: any) => {
+                            const sizeName = sizeVariation.variation_value;
+                            const isSelected = selectedSize === sizeName;
+                            const inStock = sizeVariation.stock_quantity > 0;
+                            const priceModifier = sizeVariation.price_modifier || 0;
+
+                            return (
+                              <button
+                                key={sizeVariation.id}
+                                onClick={() => setSelectedSize(sizeName)}
+                                disabled={!inStock}
+                                className={`py-3 px-4 rounded-md border-2 font-medium transition-all min-w-[60px] ${
+                                  isSelected
+                                    ? 'border-blue-600 bg-blue-600 text-white'
+                                    : 'border-gray-200 hover:border-gray-300'
+                                } ${!inStock ? 'opacity-50 cursor-not-allowed line-through' : ''}`}
+                              >
+                                <div>{sizeName}</div>
+                                {priceModifier > 0 && (
+                                  <div className="text-xs mt-1">+${priceModifier.toFixed(2)}</div>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })() : (isUsingStaticData && (product as Product).sizeOptions) ? (
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-semibold text-gray-900">Size Selection</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {(product as Product).sizeOptions.split(',').map((size: string) => {
+                          const sizeName = size.trim();
+                          const isSelected = selectedSize === sizeName;
+
+                          return (
+                            <button
+                              key={sizeName}
+                              onClick={() => setSelectedSize(sizeName)}
+                              className={`py-3 px-4 rounded-md border-2 font-medium transition-all min-w-[60px] ${
+                                isSelected
+                                  ? 'border-blue-600 bg-blue-600 text-white'
+                                  : 'border-gray-200 hover:border-gray-300'
+                              }`}
+                            >
+                              <div>{sizeName}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* Selection Summary */}
+                  {(selectedColor || selectedSize) && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <p className="text-sm text-blue-800">
+                        ✓ {selectedColor && `Color: ${selectedColor}`} {selectedColor && selectedSize && ' • '} {selectedSize && `Size: ${selectedSize}`}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </ProductErrorBoundary>
 
               {/* Description */}
               {product.description && (
@@ -267,9 +725,12 @@ export default function ProductDetailPage() {
                 <div className="flex items-center gap-4">
                   <div className="flex items-center border border-gray-300 rounded-md">
                     <button
-                      onClick={() => setQuantity(Math.max(product.min_order_quantity, quantity - 1))}
+                      onClick={() => setQuantity(Math.max(
+                        (!isUsingStaticData && availability) ? availability.minOrderQuantity : (isUsingStaticData ? 1 : (product as any).min_order_quantity || 1),
+                        quantity - 1
+                      ))}
                       className="px-4 py-3 hover:bg-gray-100 transition-colors"
-                      disabled={quantity <= product.min_order_quantity}
+                      disabled={quantity <= ((!isUsingStaticData && availability) ? availability.minOrderQuantity : (isUsingStaticData ? 1 : (product as any).min_order_quantity || 1))}
                     >
                       -
                     </button>
@@ -277,15 +738,21 @@ export default function ProductDetailPage() {
                       {quantity}
                     </span>
                     <button
-                      onClick={() => setQuantity(Math.min(product.units, quantity + 1))}
+                      onClick={() => setQuantity(Math.min(
+                        (!isUsingStaticData && availability) ? availability.maxOrderQuantity : (isUsingStaticData ? 100 : (product as any).units || 100),
+                        quantity + 1
+                      ))}
                       className="px-4 py-3 hover:bg-gray-100 transition-colors"
-                      disabled={quantity >= product.units}
+                      disabled={quantity >= ((!isUsingStaticData && availability) ? availability.maxOrderQuantity : (isUsingStaticData ? 100 : (product as any).units || 100))}
                     >
                       +
                     </button>
                   </div>
                   <span className="text-sm text-gray-600">
-                    Max: {product.units} available
+                    Max: {(!isUsingStaticData && availability)
+                      ? availability.maxOrderQuantity
+                      : (isUsingStaticData ? '100' : (product as any).units || '100')
+                    } available
                   </span>
                 </div>
               </div>
@@ -294,9 +761,9 @@ export default function ProductDetailPage() {
               <div className="space-y-3">
                 <button
                   onClick={handleAddToCart}
-                  disabled={product.units === 0}
+                  disabled={(!isUsingStaticData && availability) ? !availability.isAvailable : (isUsingStaticData ? false : (product as any).units === 0)}
                   className={`w-full py-4 px-6 rounded-md font-semibold text-lg flex items-center justify-center gap-3 transition-colors ${
-                    product.units === 0
+                    ((!isUsingStaticData && availability) ? !availability.isAvailable : (isUsingStaticData ? false : (product as any).units === 0))
                       ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                       : addedToCart
                       ? 'bg-green-600 text-white'
@@ -324,8 +791,8 @@ export default function ProductDetailPage() {
               </div>
 
               {/* Currency Converter */}
-              <CurrencyConverter 
-                basePrice={currentPrice}
+              <CurrencyConverter
+                basePrice={(!isUsingStaticData && pricing) ? pricing.finalPrice : currentPrice}
                 baseCurrency="USD"
                 className="mb-6"
               />
@@ -359,7 +826,9 @@ export default function ProductDetailPage() {
               <div className="border-t pt-6 space-y-2 text-sm">
                 <div className="flex gap-2">
                   <span className="text-gray-600 font-medium">SKU:</span>
-                  <span className="text-gray-900">{product.$id.substring(0, 12)}</span>
+                  <span className="text-gray-900">
+                    {isUsingStaticData ? 'BSS577' : (product as any).$id?.substring(0, 12) || 'BSS577'}
+                  </span>
                 </div>
                 {category && (
                   <div className="flex gap-2">
@@ -383,12 +852,12 @@ export default function ProductDetailPage() {
 
           {/* Related Products Section */}
           <div className="mt-16">
-            <div className="flex items-center justify-between mb-8">
-              <h2 className="text-2xl font-bold text-gray-900">You May Also Like</h2>
-              <Link href="/catalog" className="text-[#173a6a] hover:text-[#1e4a7a] font-medium">
-                View All Products →
-              </Link>
-            </div>
+            <RelatedProducts
+              currentProductId={(product as any).$id || (product as any).id || 'unknown'}
+              categoryId={category?.$id}
+              limit={4}
+              className="w-full"
+            />
           </div>
         </div>
       </div>

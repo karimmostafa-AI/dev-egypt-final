@@ -252,7 +252,7 @@ async function tryMoneyMorphAPI(from: string, to: string, amount: number) {
   }
 }
 
-function useFallbackRates(from: string, to: string, amount: number) {
+function getFallbackRates(from: string, to: string, amount: number) {
   const fromUpper = from.toUpperCase();
   const toUpper = to.toUpperCase();
   
@@ -442,7 +442,7 @@ export async function GET(request: NextRequest) {
     // Use fallback rates as last resort
     if (!result) {
       try {
-        result = useFallbackRates(fromUpper, toUpper, numAmount);
+        result = getFallbackRates(fromUpper, toUpper, numAmount);
       } catch (error) {
         logCurrencyError('All conversion methods failed', error, 'error');
         

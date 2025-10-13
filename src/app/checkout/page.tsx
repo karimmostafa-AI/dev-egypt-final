@@ -70,14 +70,14 @@ export default function CheckoutPage() {
   const [orderComplete, setOrderComplete] = useState(false);
   const [orderId, setOrderId] = useState<string>('');
 
-  // Helper function to determine if media_id is a URL or Appwrite file ID
+  // Helper function to determine if media_id is a URL or file ID
   const getImageSrc = (mediaId: string) => {
     // Check if it's a URL (starts with http:// or https://)
     if (mediaId.startsWith('http://') || mediaId.startsWith('https://')) {
       return mediaId;
     }
-    // Otherwise, treat it as an Appwrite file ID
-    return `/api/storage/files/${mediaId}/view`;
+    // Otherwise, treat it as a file ID in the public directory
+    return `/uploads/images/${mediaId}`;
   };
 
   const form = useForm<CheckoutFormData>({

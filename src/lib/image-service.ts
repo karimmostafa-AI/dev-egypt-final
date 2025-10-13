@@ -1,4 +1,4 @@
-import { ID, Storage, Databases } from 'appwrite';
+import { ID, Storage, Databases, Query } from 'appwrite';
 
 // Types for the image service
 interface UploadOptions {
@@ -36,6 +36,45 @@ export interface Thumbnail {
   url: string;
   width: number;
   height: number;
+}
+
+// Enhanced Product Image Service interfaces
+export interface ProductImageData {
+  id: string;
+  product_id: string;
+  image_type: 'main' | 'variation' | 'gallery' | 'back';
+  variation_type?: 'color' | 'size';
+  variation_value?: string;
+  file_id: string;
+  url: string;
+  alt_text: string;
+  sort_order: number;
+  image_source: 'device' | 'external';
+  is_active: boolean;
+  thumbnail_url?: string;
+  optimized_url?: string;
+}
+
+export interface OrganizedProductImages {
+  main: ProductImageData[];
+  back: ProductImageData[];
+  gallery: ProductImageData[];
+  variations: Record<string, ProductImageData[]>;
+}
+
+export interface ImageProcessingOptions {
+  width?: number;
+  height?: number;
+  quality?: number;
+  format?: 'webp' | 'jpg' | 'png';
+  createThumbnail?: boolean;
+}
+
+export interface ImageServiceConfig {
+  storage: Storage;
+  databases: Databases;
+  cdnBaseUrl?: string;
+  fallbackImageUrl?: string;
 }
 
 export interface OptimizationOptions {
@@ -123,20 +162,48 @@ class AdvancedImageService implements ImageUploadService {
 
         // Ensure uploads directory exists
         const uploadsDir = path.join(process.cwd(), 'public', 'uploads', 'images');
-        await fs.mkdir(uploadsDir, { recursive: true });
 
         // Convert File to ArrayBuffer for saving
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 
-        // Save file to local storage
+        // Create the full file path including any nested directories
         const filePath = path.join(uploadsDir, fileName);
+
+        // Ensure the complete directory structure exists
+        const dirPath = path.dirname(filePath);
+        await fs.mkdir(dirPath, { recursive: true });
+
+        // Save file to local storage
         await fs.writeFile(filePath, buffer);
 
         console.log('Saved file to:', filePath);
       } else {
         // Browser environment - create blob URL for preview
         console.log('Browser environment detected - creating blob URL for preview');
+
+        // Create blob URL for immediate preview
+        const blobUrl = URL.createObjectURL(file);
+        console.log('Created blob URL for preview:', blobUrl);
+
+        // Store the blob URL for cleanup later
+        (file as any).__blobUrl = blobUrl;
+
+        // Return result with blob URL for immediate preview
+        return {
+          id: `blob_${Date.now()}_${Math.random().toString(36).substring(2)}`,
+          originalName: file.name,
+          fileName,
+          url: blobUrl, // Use blob URL for immediate preview
+          cdnUrl: `/uploads/images/${fileName}`,
+          width: 0,
+          height: 0,
+          fileSize: file.size,
+          mimeType: file.type,
+          thumbnails: [],
+          dominantColor: '#cccccc',
+          metadataId: `meta_${Date.now()}_${Math.random().toString(36).substring(2)}`
+        };
       }
 
       // Generate thumbnails if requested
@@ -348,6 +415,208 @@ class AdvancedImageService implements ImageUploadService {
 // Factory function to create the service
 export const createImageService = (storage: Storage, databases: Databases): ImageUploadService => {
   return new AdvancedImageService(storage, databases);
+};
+
+// Enhanced Product Image Service for product details page
+export class EnhancedProductImageService {
+  private storage: Storage;
+  private databases: Databases;
+  private config: ImageServiceConfig;
+
+  constructor(storage: Storage, databases: Databases, config: ImageServiceConfig) {
+    this.storage = storage;
+    this.databases = databases;
+    this.config = config;
+  }
+
+  /**
+   * Get all images for a product organized by type
+   */
+  async getProductImages(productId: string): Promise<OrganizedProductImages> {
+    try {
+      // Try to fetch from images collection first
+      const databaseId = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || 'default';
+      const imagesQuery = await this.databases.listDocuments(
+        databaseId,
+        'product_images',
+        [
+          Query.equal('product_id', productId),
+          Query.equal('is_active', true),
+          Query.orderAsc('sort_order')
+        ]
+      );
+
+      const images = imagesQuery.documents as unknown as ProductImageData[];
+
+      return this.organizeImagesByType(images);
+    } catch (error) {
+      console.warn('Product images collection not found, using fallback method');
+      return this.getFallbackImages(productId);
+    }
+  }
+
+  /**
+   * Get images for specific variation combination
+   */
+  async getVariationImages(
+    productId: string,
+    variations: Record<string, string>
+  ): Promise<ProductImageData[]> {
+    try {
+      const databaseId = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || 'default';
+      const imagesQuery = await this.databases.listDocuments(
+        databaseId,
+        'product_images',
+        [
+          Query.equal('product_id', productId),
+          Query.equal('is_active', true),
+          Query.equal('image_type', 'variation')
+        ]
+      );
+
+      const images = imagesQuery.documents as unknown as ProductImageData[];
+
+      // Filter images that match the selected variations
+      return images.filter(image => {
+        if (!image.variation_type || !image.variation_value) return false;
+
+        const matchesVariation = Object.entries(variations).some(([type, value]) => {
+          return image.variation_type === type && image.variation_value === value;
+        });
+
+        return matchesVariation;
+      });
+    } catch (error) {
+      console.warn('Error fetching variation images:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Optimize image URL with transformations
+   */
+  optimizeImageUrl(url: string, options: ImageProcessingOptions = {}): string {
+    if (!url) return this.config.fallbackImageUrl || '/images/placeholder.jpg';
+
+    // If it's already an external URL, return as-is or apply basic optimizations
+    if (url.startsWith('http')) {
+      return url;
+    }
+
+    // For local URLs, apply transformations if needed
+    let optimizedUrl = url;
+
+    if (options.width || options.height) {
+      // Apply size transformations
+      const params = new URLSearchParams();
+      if (options.width) params.set('w', options.width.toString());
+      if (options.height) params.set('h', options.height.toString());
+      if (options.quality) params.set('q', options.quality.toString());
+
+      const separator = url.includes('?') ? '&' : '?';
+      optimizedUrl += separator + params.toString();
+    }
+
+    return optimizedUrl;
+  }
+
+  /**
+   * Get fallback images when database is not available
+   */
+  private async getFallbackImages(productId: string): Promise<OrganizedProductImages> {
+    // This would typically fetch from a cache or static files
+    // For now, return empty structure
+    return {
+      main: [],
+      back: [],
+      gallery: [],
+      variations: {}
+    };
+  }
+
+  /**
+   * Organize images by type
+   */
+  private organizeImagesByType(images: ProductImageData[]): OrganizedProductImages {
+    const organized: OrganizedProductImages = {
+      main: [],
+      back: [],
+      gallery: [],
+      variations: {}
+    };
+
+    images.forEach(image => {
+      switch (image.image_type) {
+        case 'main':
+          organized.main.push(image);
+          break;
+        case 'back':
+          organized.back.push(image);
+          break;
+        case 'gallery':
+          organized.gallery.push(image);
+          break;
+        case 'variation':
+          if (image.variation_value) {
+            if (!organized.variations[image.variation_value]) {
+              organized.variations[image.variation_value] = [];
+            }
+            organized.variations[image.variation_value].push(image);
+          }
+          break;
+      }
+    });
+
+    return organized;
+  }
+
+  /**
+   * Generate thumbnail URL for an image
+   */
+  getThumbnailUrl(imageUrl: string, size: 'small' | 'medium' | 'large' = 'medium'): string {
+    if (!imageUrl) return this.config.fallbackImageUrl || '/images/placeholder.jpg';
+
+    // If external URL, return as-is (assuming it already has thumbnail logic)
+    if (imageUrl.startsWith('http')) {
+      return imageUrl;
+    }
+
+    // For local URLs, append thumbnail parameters
+    const separator = imageUrl.includes('?') ? '&' : '?';
+    return `${imageUrl}${separator}thumbnail=${size}`;
+  }
+
+  /**
+   * Preload images for better performance
+   */
+  preloadImages(imageUrls: string[]): Promise<void[]> {
+    const preloadPromises = imageUrls.map(url => {
+      return new Promise<void>((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve();
+        img.onerror = () => resolve(); // Resolve even on error to not block
+        img.src = url;
+      });
+    });
+
+    return Promise.all(preloadPromises);
+  }
+
+  /**
+   * Get optimized image URLs for responsive images
+   */
+  getResponsiveImageUrls(baseUrl: string, breakpoints: number[] = [320, 640, 1024, 1440]): string[] {
+    return breakpoints.map(breakpoint => this.optimizeImageUrl(baseUrl, { width: breakpoint }));
+  }
+}
+
+// Factory function for enhanced image service
+export const createEnhancedImageService = (
+  storage: Storage,
+  databases: Databases,
+  config: ImageServiceConfig
+): EnhancedProductImageService => {
+  return new EnhancedProductImageService(storage, databases, config);
 };
 
 // Types are already exported as interfaces above

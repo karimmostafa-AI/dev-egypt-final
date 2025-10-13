@@ -1,8 +1,11 @@
+'use client';
+
 // Lazy Image Component
 // Provides optimized image loading with intersection observer and fallback
 
 import React, { useState, useRef, useEffect } from 'react';
 import Image from 'next/image';
+import { useImageOptimization } from '../../lib/image-optimization-service';
 
 export interface LazyImageProps {
   src: string;
@@ -52,6 +55,8 @@ const LazyImage: React.FC<LazyImageProps> = ({
     hasError: false,
     imageSrc: src
   });
+
+  const { generateResponsiveAttributes, getBestSupportedFormat } = useImageOptimization();
 
   const imgRef = useRef<HTMLDivElement>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -182,6 +187,10 @@ const LazyImage: React.FC<LazyImageProps> = ({
             height: height || 'auto',
             aspectRatio: width && height ? `${width}/${height}` : undefined
           }}
+          // Use modern format if available
+          {...(getBestSupportedFormat() !== 'jpg' && {
+            src: state.imageSrc.replace(/\.(jpg|jpeg|png)$/i, `.${getBestSupportedFormat()}`)
+          })}
         />
       )}
     </div>

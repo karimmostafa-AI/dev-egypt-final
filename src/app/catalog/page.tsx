@@ -107,6 +107,7 @@ export default function CatalogPage() {
           is_featured: true,
           is_new: true,
           is_active: true,
+          hasVariations: false,
           media_id: 'https://via.placeholder.com/300x400?text=Scrub+Top',
           description: 'High-quality professional scrub top',
           meta_title: 'Dev Egypt Professional Scrub Top',
@@ -128,6 +129,7 @@ export default function CatalogPage() {
           is_featured: false,
           is_new: false,
           is_active: true,
+          hasVariations: false,
           media_id: 'https://via.placeholder.com/300x400?text=Scrub+Pants',
           description: 'Comfortable and durable scrub pants',
           meta_title: 'Dev Egypt Comfortable Scrub Pants',
@@ -149,6 +151,7 @@ export default function CatalogPage() {
           is_featured: true,
           is_new: false,
           is_active: true,
+          hasVariations: false,
           media_id: 'https://via.placeholder.com/300x400?text=Scrub+Set',
           description: 'Complete professional scrub set',
           meta_title: 'Cherokee Classic Scrub Set',
@@ -283,14 +286,64 @@ export default function CatalogPage() {
     return category ? category.name : 'Unknown Category';
   };
 
-  // Helper function to determine if media_id is a URL or Appwrite file ID
-  const getImageSrc = (mediaId: string) => {
-    // Check if it's a URL (starts with http:// or https://)
-    if (mediaId.startsWith('http://') || mediaId.startsWith('https://')) {
-      return mediaId;
+  // Helper function to get the correct image source from product data
+  const getImageSrc = (product: Product) => {
+    console.log(`[DEBUG] Getting image source for product: ${product.name} (${product.$id})`);
+    console.log(`[DEBUG] Product data:`, {
+      mainImageUrl: (product as any).mainImageUrl,
+      mainImageId: (product as any).mainImageId,
+      featuredImageId: (product as any).featuredImageId,
+      media_id: (product as any).media_id
+    });
+
+    // First, check if product has mainImageUrl (this is the primary field used)
+    if ((product as any).mainImageUrl) {
+      // If it's already a full URL (starts with http), return as-is
+      if ((product as any).mainImageUrl.startsWith('http://') || (product as any).mainImageUrl.startsWith('https://')) {
+        console.log(`[DEBUG] Using HTTP URL for main image: ${(product as any).mainImageUrl}`);
+        return (product as any).mainImageUrl;
+      }
+      // If it's a blob URL, return as-is (these are temporary and may fail)
+      if ((product as any).mainImageUrl.startsWith('blob:')) {
+        console.log(`[DEBUG] Using blob URL for main image: ${(product as any).mainImageUrl}`);
+        return (product as any).mainImageUrl;
+      }
+      // Otherwise, it's likely already a full API path, return as-is
+      console.log(`[DEBUG] Using mainImageUrl as-is: ${(product as any).mainImageUrl}`);
+      return (product as any).mainImageUrl;
     }
-    // Otherwise, treat it as an Appwrite file ID
-    return `/api/storage/files/${mediaId}/view`;
+
+    // Check if product has mainImageId (fallback) - use API route path
+    if ((product as any).mainImageId) {
+      // Use the API route to serve the image from public/uploads/images directory
+      const imagePath = `/api/storage/files/${(product as any).mainImageId}`;
+      console.log(`[DEBUG] Using API route for mainImageId: ${imagePath}`);
+      return imagePath;
+    }
+
+    // Check if product has featuredImageId
+    if ((product as any).featuredImageId) {
+      const imagePath = `/api/storage/files/${(product as any).featuredImageId}`;
+      console.log(`[DEBUG] Using API route for featuredImageId: ${imagePath}`);
+      return imagePath;
+    }
+
+    // Check if product has media_id (legacy field)
+    if ((product as any).media_id) {
+      // Check if it's a URL (starts with http:// or https://)
+      if ((product as any).media_id.startsWith('http://') || (product as any).media_id.startsWith('https://')) {
+        console.log(`[DEBUG] Using HTTP media_id URL: ${(product as any).media_id}`);
+        return (product as any).media_id;
+      }
+      // Otherwise, treat it as a file ID and use API route path
+      const imagePath = `/api/storage/files/${(product as any).media_id}`;
+      console.log(`[DEBUG] Using API route for media_id: ${imagePath}`);
+      return imagePath;
+    }
+
+    // Default fallback for products without images
+    console.log(`[DEBUG] No image found for product ${product.name}, using placeholder`);
+    return 'https://via.placeholder.com/300x400?text=No+Image';
   };
 
   // Filter and sort products
@@ -728,27 +781,210 @@ export default function CatalogPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {filteredAndSortedProducts.map((product) => (
                       <Link key={product.$id} href={`/product/${product.slug}`} className="bg-white rounded-lg overflow-hidden shadow-sm border hover:shadow-lg transition-all duration-300 group block">
-                        {/* Product Image */}
-                        <div className="relative h-64 bg-gray-100 flex items-center justify-center overflow-hidden">
-                          {product.media_id ? (
-                            <Image
-                              src={getImageSrc(product.media_id)}
-                              alt={product.name}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                              width={300} 
-                              height={300}
-                              onError={(e) => {
-                                // Fallback to placeholder if image fails to load
-                                e.currentTarget.style.display = 'none';
-                                e.currentTarget.parentElement?.querySelector('.fallback-icon')?.classList.remove('hidden');
-                              }}
-                            />
-                          ) : null}
-                          {/* Fallback icon - shown if no media_id or image fails to load */}
-                          <div className={`text-gray-400 text-4xl fallback-icon ${product.media_id ? 'hidden' : ''}`}>📦</div>
-                          
+                        {/* Product Image with Flip Animation */}
+                        <div className="flip-container relative h-64 bg-gray-100 flex items-center justify-center overflow-hidden">
+                          <div className="flip-inner relative w-full h-full">
+                            {/* Front Image */}
+                            <div className="flip-front absolute inset-0 w-full h-full">
+                              <Image
+                                src={getImageSrc(product)}
+                                alt={`${product.name} - front view`}
+                                className="w-full h-full object-cover"
+                                width={300}
+                                height={300}
+                                priority={true}
+                                onError={(e) => {
+                                  console.error(`[DEBUG] Front image failed to load: ${getImageSrc(product)}`, {
+                                    productId: product.$id,
+                                    productName: product.name,
+                                    attemptedUrl: getImageSrc(product)
+                                  });
+
+                                  e.currentTarget.style.display = 'none';
+
+                                  // Show fallback UI
+                                  const fallbackIcon = e.currentTarget.parentElement?.parentElement?.querySelector('.fallback-icon');
+                                  if (fallbackIcon) {
+                                    fallbackIcon.classList.remove('hidden');
+                                  } else {
+                                    // Create fallback UI if it doesn't exist
+                                    const fallbackDiv = document.createElement('div');
+                                    fallbackDiv.className = 'text-gray-400 text-4xl fallback-icon hidden w-full h-full flex items-center justify-center';
+                                    fallbackDiv.innerHTML = '📦';
+                                    e.currentTarget.parentElement?.parentElement?.appendChild(fallbackDiv);
+                                    fallbackDiv.classList.remove('hidden');
+                                  }
+                                }}
+                              />
+                              {/* Fallback icon for front */}
+                              <div className="text-gray-400 text-4xl fallback-icon hidden w-full h-full flex items-center justify-center">
+                                📦
+                              </div>
+                            </div>
+
+                            {/* Back Image */}
+                            <div className="flip-back absolute inset-0 w-full h-full">
+                              {(() => {
+                                console.log(`[DEBUG] Rendering back image for product: ${product.name} (${product.$id})`);
+
+                                // Try to get back image URL from product data
+                                const backImageUrl = (product as any).backImageUrl;
+                                const mainImageUrl = (product as any).mainImageUrl;
+                                const mediaId = (product as any).media_id;
+
+                                console.log(`[DEBUG] Product: ${product.name}`);
+                                console.log(`[DEBUG] backImageUrl:`, backImageUrl);
+                                console.log(`[DEBUG] mainImageUrl:`, mainImageUrl);
+                                console.log(`[DEBUG] media_id:`, mediaId);
+                                // Determine the best image source with fallback chain
+                                const getBestImageSource = () => {
+                                  // First priority: backImageUrl (if it's a valid URL or public path)
+                                  if (backImageUrl && (backImageUrl.startsWith('http://') || backImageUrl.startsWith('https://') || backImageUrl.startsWith('/uploads/') || backImageUrl.startsWith('/api/'))) {
+                                    return backImageUrl;
+                                  }
+
+                                  // Second priority: mainImageUrl (if it's a valid URL or public path)
+                                  if (mainImageUrl && (mainImageUrl.startsWith('http://') || mainImageUrl.startsWith('https://') || mainImageUrl.startsWith('/uploads/') || mainImageUrl.startsWith('/api/'))) {
+                                    return mainImageUrl;
+                                  }
+
+                                  // Third priority: public directory URL from media_id
+                                  if (mediaId && (mediaId.startsWith('http://') || mediaId.startsWith('https://'))) {
+                                    return mediaId;
+                                  }
+
+                                  // Fourth priority: API route URL constructed from media_id
+                                  if (mediaId) {
+                                    return `/api/storage/files/${mediaId}`;
+                                  }
+
+                                  // Final fallback: use fallback UI instead of external placeholder
+                                  return null; // This will trigger the fallback UI below
+                                };
+
+                                const imageSrc = getBestImageSource();
+                                console.log(`[DEBUG] Selected image source: ${imageSrc}`);
+
+                                // If no valid image source found, show fallback UI directly
+                                if (!imageSrc) {
+                                  console.log(`[DEBUG] No image source available, showing fallback UI`);
+                                  return (
+                                    <div className="w-full h-full bg-gray-200 flex flex-col items-center justify-center text-gray-400">
+                                      <span className="back-fallback-icon text-2xl mb-1">↻</span>
+                                      <span className="text-xs text-center px-2">Back view not available</span>
+                                    </div>
+                                  );
+                                }
+
+                                return (
+                                  <Image
+                                    src={imageSrc}
+                                    alt={`${product.name} - back view`}
+                                    className="w-full h-full object-cover"
+                                    width={300}
+                                    height={300}
+                                    onError={(e) => {
+                                       console.error(`[DEBUG] Back image failed to load: ${imageSrc}`, {
+                                         productId: product.$id,
+                                         productName: product.name,
+                                         attemptedUrl: imageSrc,
+                                         availableSources: {
+                                           backImageUrl,
+                                           mainImageUrl,
+                                           mediaId
+                                         }
+                                       });
+
+                                       // Hide the failed image
+                                       e.currentTarget.style.display = 'none';
+
+                                       // Show fallback UI
+                                       const fallbackIcon = e.currentTarget.parentElement?.querySelector('.back-fallback-icon');
+                                       if (fallbackIcon) {
+                                         fallbackIcon.classList.remove('hidden');
+                                         console.log(`[DEBUG] Showing fallback icon for failed back image`);
+                                       } else {
+                                         // Create fallback UI if it doesn't exist
+                                         const fallbackDiv = document.createElement('div');
+                                         fallbackDiv.className = 'w-full h-full bg-gray-200 flex flex-col items-center justify-center text-gray-400 back-fallback-icon';
+                                         fallbackDiv.innerHTML = `
+                                           <span class="text-2xl mb-1">↻</span>
+                                           <span class="text-xs text-center px-2">Back view not available</span>
+                                         `;
+                                         e.currentTarget.parentElement?.appendChild(fallbackDiv);
+                                       }
+                                     }}
+                                    onLoad={() => {
+                                      console.log(`[DEBUG] Back image loaded successfully: ${imageSrc}`);
+                                    }}
+                                  />
+                                );
+
+                                // Try to parse product images if stored as JSON
+                                const imagesData = (product as any).images;
+                                console.log(`[DEBUG] images data:`, imagesData);
+
+                                try {
+                                  if (imagesData) {
+                                    const productImages = JSON.parse(imagesData);
+                                    console.log(`[DEBUG] Parsed images:`, productImages);
+                                    const backImage = productImages.find((img: any) => img.type === 'back');
+                                    console.log(`[DEBUG] Found back image:`, backImage);
+
+                                    if (backImage && backImage.url) {
+                                      console.log(`[DEBUG] Using parsed back image URL: ${backImage.url}`);
+                                      return (
+                                        <Image
+                                          src={backImage.url}
+                                          alt={`${product.name} - back view`}
+                                          className="w-full h-full object-cover"
+                                          width={300}
+                                          height={300}
+                                          onError={(e) => {
+                                            console.error(`[DEBUG] Parsed back image failed to load: ${backImage.url}`, {
+                                              productId: product.$id,
+                                              productName: product.name,
+                                              imageUrl: backImage.url,
+                                              parsedData: productImages
+                                            });
+                                            e.currentTarget.style.display = 'none';
+                                            const fallbackIcon = e.currentTarget.parentElement?.querySelector('.back-fallback-icon');
+                                            if (fallbackIcon) {
+                                              fallbackIcon.classList.remove('hidden');
+                                              console.log(`[DEBUG] Showing fallback icon for failed parsed back image`);
+                                            }
+                                          }}
+                                          onLoad={() => {
+                                            console.log(`[DEBUG] Parsed back image loaded successfully: ${backImage.url}`);
+                                          }}
+                                        />
+                                      );
+                                    }
+                                  }
+                                } catch (error) {
+                                  console.error(`[DEBUG] Error parsing product images for ${product.name}:`, {
+                                    error: error,
+                                    productId: product.$id,
+                                    imagesData: imagesData
+                                  });
+                                }
+
+                                // Log when falling back to placeholder
+                                console.log(`[DEBUG] No back image found for ${product.name}, using fallback`);
+
+                                // Fallback placeholder with informative message
+                                console.log(`[DEBUG] No valid back image found for ${product.name}, using enhanced fallback`);
+                                return (
+                                  <div className="w-full h-full bg-gray-200 flex flex-col items-center justify-center text-gray-400">
+                                    <span className="back-fallback-icon text-2xl mb-1">↻</span>
+                                    <span className="text-xs text-center px-2">Back view not available</span>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          </div>
                           {/* Badges */}
-                          <div className="absolute top-3 left-3 flex flex-col gap-2">
+                          <div className="absolute top-3 left-3 flex flex-col gap-2 z-10">
                             {product.is_featured && (
                               <span className="flex items-center gap-1 px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 rounded">
                                 <Star className="h-3 w-3" />
@@ -766,9 +1002,9 @@ export default function CatalogPage() {
                               </span>
                             )}
                           </div>
-                          
+
                           {/* Wishlist Button */}
-                          <button className="absolute top-3 right-3 p-2 bg-white rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-gray-50">
+                          <button className="absolute top-3 right-3 p-2 bg-white rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-gray-50 z-10">
                             <Heart className="h-4 w-4 text-gray-600" />
                           </button>
                         </div>

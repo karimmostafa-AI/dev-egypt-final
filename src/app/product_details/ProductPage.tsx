@@ -1,8 +1,15 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useParams } from 'next/navigation';
+import { Client, Databases, Storage } from 'appwrite';
+import ProductImageGallery from '@/components/ui/ProductImageGallery';
+import ProductVariations, { VariationGroup, VariationOption } from '@/components/ui/ProductVariations';
+import ProductErrorBoundary from '@/components/ui/ProductErrorBoundary';
 import Image from 'next/image';
-import Button from '../../../components/ui/Button';
+import { Button } from '@/components/ui/button';
 import Dropdown from '../../../components/ui/Dropdown';
+import { useProductDetails } from '@/hooks/useProductDetails';
+import { PageLoadingSpinner, ProgressiveLoader } from '@/components/ui/LoadingStates';
 
 interface Product {
   id: string;
@@ -27,14 +34,76 @@ interface RelatedProduct {
 }
 
 export default function ProductPage() {
-  const [selectedColor, setSelectedColor] = useState('Royal');
-  const [selectedSize, setSelectedSize] = useState('');
-  const [quantity, setQuantity] = useState(1);
-  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const params = useParams();
+  const productSlug = params?.slug as string || 'default-product';
+
+  // Initialize Appwrite client
+  const client = new Client()
+    .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1')
+    .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || '');
+
+  const databases = new Databases(client);
+  const storage = new Storage(client);
+
+  // Use the custom hook for product details
+  const {
+    product,
+    loading,
+    error,
+    selectedVariations,
+    selectedColor,
+    selectedSize,
+    quantity,
+    currentImageIndex,
+    processedImages,
+    setSelectedColor,
+    setSelectedSize,
+    setQuantity,
+    setCurrentImageIndex,
+    setSelectedVariations,
+    handleVariationChange,
+    refetch
+  } = useProductDetails(productSlug, databases, storage);
+
+  // Debug logging
+  console.log('🔍 ProductPage Debug:', {
+    productSlug,
+    hasProduct: !!product,
+    loading,
+    error,
+    productName: product?.name,
+    imagesCount: product?.images?.length || 0,
+    variationsCount: product?.variations?.length || 0,
+    processedImagesCount: processedImages?.length || 0,
+    selectedColor,
+    selectedSize,
+    isUsingStaticData: !product
+  });
+
   const [addEmbroidery, setAddEmbroidery] = useState(false);
   const [featuresExpanded, setFeaturesExpanded] = useState(true);
 
-  const product: Product = {
+  // Force refetch on component mount to ensure fresh data
+  useEffect(() => {
+    if (product && !loading) {
+      console.log('🔄 Forcing refetch to ensure fresh data...');
+      refetch();
+    }
+  }, []); // Only run on mount
+
+  // Show loading state while fetching data
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-white">
+        <div className="w-full max-w-[1448px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <PageLoadingSpinner message="Loading product details..." />
+        </div>
+      </div>
+    );
+  }
+
+  // Fallback to static data if Appwrite fails or returns no data
+  const staticProduct: Product = {
     id: 'BSS577',
     name: 'Butter-Soft STRETCH Men\'s 4-Pocket V-Neck Scrub Top',
     style: 'BSS577',
@@ -56,6 +125,147 @@ export default function ProductPage() {
       'Purple': '/figma/product-images/main-product-purple.png',
       'Green': '/figma/product-images/main-product-green.png'
     }
+  };
+
+  // Use dynamic data if available, otherwise fall back to static data
+  const displayProduct = product || staticProduct;
+  const isUsingStaticData = !product;
+
+  // Transform data for UI components (works with both static and dynamic data)
+  const productImages = isUsingStaticData
+    ? (displayProduct as Product).colors.map(color => ({
+        src: (displayProduct as Product).images[color],
+        alt: `${displayProduct.name} - ${color}`,
+        color,
+        isMain: color === 'Royal'
+      }))
+    : (processedImages || []).map((processedImg: any) => {
+        // Handle the direct image format we're now using
+        const imageData = processedImg.original || processedImg;
+        console.log('🖼️ Processing image for gallery:', {
+          src: imageData.url,
+          alt: imageData.alt_text,
+          type: imageData.image_type
+        });
+
+        return {
+          src: imageData.url,
+          alt: imageData.alt_text || `${displayProduct.name} - Image`,
+          color: imageData.variation_value || 'Default',
+          isMain: imageData.image_type === 'main'
+        };
+      });
+
+  // Log the actual URLs being passed to the gallery
+  if (productImages.length > 0) {
+    console.log('🎨 ProductImageGallery URLs:', productImages.map(img => ({
+      src: img.src,
+      alt: img.alt,
+      type: img.isMain ? 'main' : 'gallery'
+    })));
+  }
+
+  const variationGroups: VariationGroup[] = [];
+
+  if (isUsingStaticData) {
+    // Use static variation data
+    const staticProduct = displayProduct as Product;
+    variationGroups.push(
+      {
+        id: 'color',
+        name: 'Color',
+        type: 'color',
+        required: true,
+        options: staticProduct.colors.map(color => ({
+          id: color,
+          value: color,
+          label: color,
+          available: true,
+          stockCount: Math.floor(Math.random() * 50) + 10,
+          image: staticProduct.images[color]
+        }))
+      },
+      {
+        id: 'size',
+        name: 'Size',
+        type: 'size',
+        required: true,
+        options: staticProduct.sizes.map(size => ({
+          id: size,
+          value: size,
+          label: size,
+          available: true,
+          stockCount: Math.floor(Math.random() * 30) + 5
+        }))
+      }
+    );
+  } else {
+    // Use dynamic variation data
+    const dynamicProduct = displayProduct as any;
+    const variations = dynamicProduct.variations || [];
+
+    // Debug logging to see what variations data we have
+    console.log('Dynamic product variations:', variations);
+
+    const colorVariations = variations.filter((v: any) => v.variation_type === 'color');
+    const sizeVariations = variations.filter((v: any) => v.variation_type === 'size');
+    const otherVariations = variations.filter((v: any) => v.variation_type !== 'color' && v.variation_type !== 'size');
+
+    if (colorVariations.length > 0) {
+      variationGroups.push({
+        id: 'color',
+        name: 'Color',
+        type: 'color',
+        required: true,
+        options: colorVariations.map((variation: any) => {
+          const image = dynamicProduct.images?.find((img: any) => img.variation_value === variation.variation_value);
+          return {
+            id: variation.id,
+            value: variation.variation_value,
+            label: variation.variation_label || variation.variation_value,
+            available: variation.stock_quantity > 0,
+            stockCount: variation.stock_quantity,
+            priceModifier: variation.price_modifier || 0,
+            image: image?.url
+          };
+        })
+      });
+    }
+
+    if (sizeVariations.length > 0) {
+      variationGroups.push({
+        id: 'size',
+        name: 'Size',
+        type: 'size',
+        required: true,
+        options: sizeVariations.map((variation: any) => ({
+          id: variation.id,
+          value: variation.variation_value,
+          label: variation.variation_label || variation.variation_value,
+          available: variation.stock_quantity > 0,
+          stockCount: variation.stock_quantity,
+          priceModifier: variation.price_modifier || 0
+        }))
+      });
+    }
+
+    // Add other variation types if they exist
+    otherVariations.forEach((variation: any) => {
+      variationGroups.push({
+        id: variation.variation_type,
+        name: variation.variation_type.charAt(0).toUpperCase() + variation.variation_type.slice(1),
+        type: variation.variation_type as 'color' | 'size' | 'style' | 'material',
+        required: false,
+        options: [{
+          id: variation.id,
+          value: variation.variation_value,
+          label: variation.variation_label,
+          available: variation.stock_quantity > 0,
+          stockCount: variation.stock_quantity,
+          priceModifier: variation.price_modifier
+        }]
+      });
+    });
   }
 
   const relatedProducts: RelatedProduct[] = [
@@ -107,18 +317,91 @@ export default function ProductPage() {
   ]
 
   const handleQuantityChange = (change: number) => {
-    setQuantity(Math.max(1, quantity + change));
+    const newQuantity = Math.max(1, quantity + change);
+    setQuantity(newQuantity);
+  };
+
+  // Calculate if all required variations are selected
+  const requiredVariations = variationGroups.filter(group => group.required);
+  const hasAllRequiredVariations = requiredVariations.every(group =>
+    selectedVariations[group.id] && selectedVariations[group.id] !== ''
+  );
+
+  // Calculate total price
+  const calculateTotalPrice = () => {
+    let totalPrice = isUsingStaticData
+      ? parseFloat((displayProduct as Product).price.sale.replace('$', '').split(' - ')[0])
+      : (displayProduct as any).discount_price > 0 ? (displayProduct as any).discount_price : (displayProduct as any).price;
+
+    // Add price modifiers from selected variations
+    Object.entries(selectedVariations).forEach(([groupId, optionId]) => {
+      if (isUsingStaticData) {
+        // For static data, add a small modifier based on variation
+        if (groupId === 'size' && ['2X', '3X', '4X', '5X'].includes(optionId)) {
+          totalPrice += 50; // Size upcharge for static data
+        }
+      } else {
+        const variation = (displayProduct as any).variations.find((v: any) => v.id === optionId);
+        if (variation) {
+          totalPrice += variation.price_modifier;
+        }
+      }
+    });
+
+    // Add embroidery cost if selected
+    if (addEmbroidery && (isUsingStaticData || (displayProduct as any).embroidery_available)) {
+      const embroideryPrice = isUsingStaticData ? 7.99 : (displayProduct as any).embroidery_price;
+      totalPrice += embroideryPrice;
+    }
+
+    return totalPrice * quantity;
   };
 
   const handleAddToBag = () => {
+    // Calculate total price including variations and embroidery
+    let totalPrice = isUsingStaticData
+      ? parseFloat((displayProduct as Product).price.sale.replace('$', '').split(' - ')[0])
+      : (displayProduct as any).discount_price > 0 ? (displayProduct as any).discount_price : (displayProduct as any).price;
+
+    // Add price modifiers from selected variations
+    Object.entries(selectedVariations).forEach(([groupId, optionId]) => {
+      if (isUsingStaticData) {
+        // For static data, add a small modifier based on variation
+        if (groupId === 'size' && ['2X', '3X', '4X', '5X'].includes(optionId)) {
+          totalPrice += 50; // Size upcharge for static data
+        }
+      } else {
+        const variation = (displayProduct as any).variations.find((v: any) => v.id === optionId);
+        if (variation) {
+          totalPrice += variation.price_modifier;
+        }
+      }
+    });
+
+    // Add embroidery cost if selected
+    if (addEmbroidery && (isUsingStaticData || (displayProduct as any).embroidery_available)) {
+      const embroideryPrice = isUsingStaticData ? 7.99 : (displayProduct as any).embroidery_price;
+      totalPrice += embroideryPrice;
+    }
+
     // Add to cart logic
     console.log('Added to bag:', {
-      product: product.name,
-      color: selectedColor,
-      size: selectedSize,
+      productId: displayProduct.id,
+      productName: displayProduct.name,
+      selectedVariations,
       quantity,
-      embroidery: addEmbroidery
+      addEmbroidery,
+      unitPrice: isUsingStaticData
+        ? parseFloat((displayProduct as Product).price.sale.replace('$', '').split(' - ')[0])
+        : (displayProduct as any).discount_price > 0 ? (displayProduct as any).discount_price : (displayProduct as any).price,
+      totalPrice: totalPrice * quantity,
+      embroideryCost: addEmbroidery && (isUsingStaticData || (displayProduct as any).embroidery_available)
+        ? (isUsingStaticData ? 7.99 : (displayProduct as any).embroidery_price)
+        : 0
     });
+
+    // Here you would typically dispatch to a cart context or make an API call
+    // For now, we'll just show a success message or handle via toast notification
   };
 
   const handleColorSelect = (color: string) => {
@@ -129,10 +412,12 @@ export default function ProductPage() {
     setSelectedSize(size);
   };
 
+
   return (
-    <div className="min-h-screen bg-white">
-      
-      <main className="w-full">
+    <ProductErrorBoundary>
+      <div className="min-h-screen bg-white">
+
+        <main className="w-full">
         {/* Breadcrumb */}
         <div className="w-full max-w-[1448px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <nav className="flex items-center text-sm text-neutral-dark">
@@ -149,64 +434,43 @@ export default function ProductPage() {
         {/* Product Section */}
         <div className="w-full max-w-[1448px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-16">
-            {/* Product Images */}
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-2">
-                {/* Main product image based on selected color */}
-                <div className="col-span-2 bg-neutral-light rounded-lg overflow-hidden">
-                  <Image
-                    src={product.images[selectedColor] || product.images['Royal']}
-                    alt={`${product.name} - ${selectedColor}`}
-                    width={454}
-                    height={678}
-                    className="w-full h-auto object-cover"
-                  />
-                </div>
-                
-                {/* Color variant thumbnails */}
-                <div className="col-span-2 grid grid-cols-4 gap-2">
-                  {product.colors.slice(0, 4).map((color) => (
-                    <div 
-                      key={color} 
-                      className={`bg-neutral-light rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity border-2 ${
-                        selectedColor === color ? 'border-primary-background' : 'border-transparent'
-                      }`}
-                      onClick={() => setSelectedColor(color)}
-                    >
-                      <Image
-                        src={product.images[color]}
-                        alt={`${product.name} - ${color}`}
-                        width={100}
-                        height={150}
-                        className="w-full h-auto object-cover"
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+            {/* Enhanced Product Images */}
+            <ProgressiveLoader
+              isLoading={loading}
+              loadingComponent={<div className="bg-neutral-light rounded-lg overflow-hidden"><div className="aspect-[3/4] bg-gray-200 animate-pulse" /></div>}
+            >
+              <ProductImageGallery
+                images={productImages}
+                selectedColor={selectedColor}
+                onColorChange={setSelectedColor}
+                className="w-full"
+                priority={true}
+                showThumbnails={true}
+                maxThumbnails={4}
+              />
+            </ProgressiveLoader>
 
             {/* Product Details */}
             <div className="space-y-6">
               {/* Product Title and Rating */}
               <div className="space-y-2">
                 <p className="text-sm font-normal text-black uppercase underline">
-                  Butter-Soft Stretch
+                  Product Details
                 </p>
                 <h1 className="text-xl lg:text-2xl font-medium text-black leading-tight">
-                  {product.name}
+                  {displayProduct.name}
                 </h1>
                 <p className="text-sm font-normal text-text-muted uppercase">
-                  Style # {product.style}
+                  SKU: {isUsingStaticData ? (displayProduct as Product).style : (displayProduct as any).sku}
                 </p>
-                
-                {/* Rating */}
+
+                {/* Rating - Using placeholder for now since not in ProductDetails */}
                 <div className="flex items-center gap-2">
                   <div className="flex items-center">
                     {[...Array(5)].map((_, i) => (
                       <Image
                         key={i}
-                        src={i < Math.floor(product.rating) ? "/images/img_component_7.svg" : "/images/img_component_7_orange_400.svg"}
+                        src="/images/img_component_7.svg"
                         alt="Star"
                         width={12}
                         height={14}
@@ -214,153 +478,100 @@ export default function ProductPage() {
                       />
                     ))}
                   </div>
-                  <span className="text-sm font-medium text-neutral-dark">({product.reviewCount})</span>
+                  <span className="text-sm font-medium text-neutral-dark">(Customer Reviews)</span>
                 </div>
               </div>
 
               {/* Pricing */}
               <div className="space-y-2">
                 <div className="flex items-end gap-2">
-                  <span className="text-2xl lg:text-3xl font-medium text-primary-background">
-                    {product.price.sale}
+                  <span className="text-2xl lg:text-3xl font-medium text-primary">
+                    {isUsingStaticData ? (
+                      <>EGP {(displayProduct as Product).price.sale}</>
+                    ) : (
+                      <>EGP {(displayProduct as any).discount_price > 0 ? (displayProduct as any).discount_price : (displayProduct as any).price}</>
+                    )}
                   </span>
-                  <span className="text-lg lg:text-xl font-normal text-text-light line-through">
-                    {product.price.original}
-                  </span>
-                </div>
-                <p className="text-sm font-medium text-black">
-                  2X-3X add EGP 155.00, 4X-5X add EGP 255.00
-                </p>
-                <p className="text-base font-medium text-primary-background">
-                  Sale! Ends 9/29/25
-                </p>
-              </div>
-
-              {/* Color Selection */}
-              <div className="space-y-4">
-                <Dropdown
-                  placeholder={selectedColor}
-                  options={product.colors}
-                  onSelect={handleColorSelect}
-                  className="w-full"
-                  fill_background_color="bg-neutral-light"
-                />
-
-                {/* Color Swatches */}
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-bold text-primary-background uppercase tracking-wide">
-                        Available Colors: 
-                      </p>
-                      <p className="text-sm font-normal text-primary-background capitalize">
-                        Select a color
-                      </p>
-                    </div>
-                    
-                    {/* Color Options */}
-                    <div className="flex flex-wrap gap-2">
-                      {product.colors.map((color) => (
-                        <button 
-                          key={color}
-                          onClick={() => setSelectedColor(color)}
-                          className={`w-11 h-11 rounded-full overflow-hidden border-2 transition-colors ${
-                            selectedColor === color 
-                              ? 'border-primary-background ring-2 ring-primary-background ring-opacity-50' 
-                              : 'border-transparent hover:border-primary-background'
-                          }`}
-                        >
-                          <Image 
-                            src={product.images[color]} 
-                            alt={`${color} color`} 
-                            width={44} 
-                            height={44} 
-                            className="w-full h-full object-cover" 
-                          />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  
-                  {selectedColor && (
-                    <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                      <p className="text-sm text-blue-800">
-                        ✓ Color <span className="font-semibold">{selectedColor}</span> selected
-                      </p>
-                    </div>
+                  {isUsingStaticData ? (
+                    <span className="text-lg lg:text-xl font-normal text-text-light line-through">
+                      EGP {(displayProduct as Product).price.original}
+                    </span>
+                  ) : (
+                    (displayProduct as any).discount_price > 0 && (
+                      <span className="text-lg lg:text-xl font-normal text-text-light line-through">
+                        EGP {(displayProduct as any).price}
+                      </span>
+                    )
                   )}
                 </div>
-              </div>
-
-              {/* Size Selection */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-bold text-black uppercase tracking-wide">Size:</p>
-                  <button className="text-sm font-normal text-black underline">Size Chart</button>
-                </div>
-                
-                <div className="space-y-2">
-                  <div className="grid grid-cols-5 gap-2">
-                    {['XS', 'S', 'M', 'L', 'XL'].map((size) => (
-                      <Button
-                        key={size}
-                        text={size}
-                        variant="secondary"
-                        className={`text-sm font-normal text-black border border-neutral-light rounded-base px-4 py-3 transition-all duration-200 ${
-                          selectedSize === size 
-                            ? 'bg-primary-background text-white shadow-lg transform scale-105' 
-                            : 'bg-neutral-light hover:bg-neutral-background hover:border-primary-background'
-                        }`}
-                        onClick={() => handleSizeSelect(size)}
-                      />
-                    ))}
-                  </div>
-                  
-                  <div className="flex gap-2">
-                    {['2X', '3X', '4X', '5X'].map((size) => (
-                      <Button
-                        key={size}
-                        text={size}
-                        variant="secondary"
-                        className={`text-sm font-normal text-black border border-neutral-light rounded-base px-4 py-3 transition-all duration-200 ${
-                          selectedSize === size 
-                            ? 'bg-primary-background text-white shadow-lg transform scale-105' 
-                            : 'bg-neutral-light hover:bg-neutral-background hover:border-primary-background'
-                        }`}
-                        onClick={() => handleSizeSelect(size)}
-                      />
-                    ))}
-                  </div>
-                </div>
-                
-                {selectedSize && (
-                  <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg">
-                    <p className="text-sm text-green-800">
-                      ✓ Size <span className="font-semibold">{selectedSize}</span> selected
+                <p className="text-sm font-medium text-black">
+                  {isUsingStaticData ? (
+                    <>2X-3X add EGP 155.00, 4X-5X add EGP 255.00</>
+                  ) : (
+                    <>Stock: {(displayProduct as any).stock_quantity} available</>
+                  )}
+                </p>
+                {isUsingStaticData ? (
+                  <p className="text-base font-medium text-primary">
+                    Sale! Ends 9/29/25
+                  </p>
+                ) : (
+                  (displayProduct as any).discount_price > 0 && (
+                    <p className="text-base font-medium text-primary">
+                      Sale! Special Price
                     </p>
-                  </div>
+                  )
                 )}
               </div>
 
+              {/* Enhanced Product Variations */}
+              <ProgressiveLoader
+                isLoading={loading}
+                loadingComponent={<div className="space-y-4"><div className="h-20 bg-gray-200 animate-pulse rounded" /></div>}
+              >
+                <ProductVariations
+                  variations={variationGroups}
+                  selectedVariations={selectedVariations}
+                  onVariationChange={handleVariationChange}
+                  maxStock={isUsingStaticData ? 100 : (displayProduct as any).stock_quantity}
+                  className="w-full"
+                />
+              </ProgressiveLoader>
+
               {/* Add Embroidery */}
-              <div className="bg-neutral-light rounded-base p-4">
-                <div className="flex items-start gap-4">
-                  <div className="w-5 h-5 border border-text-light rounded-xs bg-white mt-1">
-                    {addEmbroidery && (
-                      <div className="w-full h-full bg-primary-background rounded-xs"></div>
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="space-y-1">
-                      <h4 className="text-base font-bold text-black">Add Embroidery</h4>
-                      <p className="text-sm font-normal text-black">From $7.99</p>
-                      <p className="text-xs font-normal text-text-light">
-                        Select options once you 'Add to Bag'
-                      </p>
+              {(isUsingStaticData || (displayProduct as any).embroidery_available) && (
+                <div className="bg-neutral-light rounded-base p-4">
+                  <div className="flex items-start gap-4">
+                    <button
+                      onClick={() => setAddEmbroidery(!addEmbroidery)}
+                      className="w-5 h-5 border border-text-light rounded-xs bg-white mt-1 flex items-center justify-center"
+                      aria-label={addEmbroidery ? 'Remove embroidery' : 'Add embroidery'}
+                    >
+                      {addEmbroidery && (
+                        <svg className="w-3 h-3 text-primary" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </button>
+                    <div className="flex-1">
+                      <div className="space-y-1">
+                        <h4 className="text-base font-bold text-black">Add Embroidery</h4>
+                        <p className="text-sm font-normal text-black">
+                          {isUsingStaticData ? 'From $7.99' : ((displayProduct as any).embroidery_price > 0 ? `EGP ${(displayProduct as any).embroidery_price}` : 'Free with purchase')}
+                        </p>
+                        <p className="text-xs font-normal text-text-light">
+                          {addEmbroidery ? 'Embroidery selected - configure options after adding to bag' : 'Select options once you add to bag'}
+                        </p>
+                        {addEmbroidery && (
+                          <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-800">
+                            ✓ Embroidery service added (EGP {isUsingStaticData ? '7.99' : (displayProduct as any).embroidery_price})
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               {/* Quantity and Add to Bag */}
               <div className="space-y-4">
@@ -383,34 +594,74 @@ export default function ProductPage() {
                 </div>
 
                 <Button
-                  text="ADD TO BAG"
-                  variant="primary"
-                  size="medium"
-                  className="w-full bg-primary-background text-white font-normal uppercase text-base px-8 py-4 rounded-base hover:bg-primary-dark"
+                  variant="default"
+                  disabled={!hasAllRequiredVariations}
+                  className={`w-full font-normal uppercase text-base px-8 py-4 rounded-base ${
+                    hasAllRequiredVariations
+                      ? 'bg-primary text-white hover:bg-primary/90'
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  }`}
                   onClick={handleAddToBag}
-                />
+                >
+                  {hasAllRequiredVariations ? (
+                    <>
+                      ADD TO BAG • EGP {calculateTotalPrice().toFixed(2)}
+                    </>
+                  ) : (
+                    'SELECT REQUIRED OPTIONS'
+                  )}
+                </Button>
+
+                {!hasAllRequiredVariations && (
+                  <p className="text-sm text-red-600 mt-2 text-center">
+                    Please select {requiredVariations.map(group => group.name.toLowerCase()).join(' and ')} to continue
+                  </p>
+                )}
               </div>
 
               {/* Finish Your Look */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-base font-normal text-neutral-dark">Finish Your Look in </span>
-                  <span className="text-base font-normal text-black underline capitalize">{selectedColor}</span>
-                </div>
-                
-                <div className="bg-neutral-light rounded-base p-4">
-                  <div className="flex flex-col items-center space-y-2">
-                    <Image 
-                      src="/images/img_button_margin.svg" 
-                      alt="Royal Color" 
-                      width={44} 
-                      height={44}
-                      className="w-11 h-11"
-                    />
-                    <span className="text-xs font-normal text-black">Royal</span>
+              {selectedColor && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base font-normal text-neutral-dark">Finish Your Look in </span>
+                    <span className="text-base font-normal text-black underline capitalize">{selectedColor}</span>
+                  </div>
+
+                  <div className="bg-neutral-light rounded-base p-4">
+                    <div className="flex flex-col items-center space-y-2">
+                      {/* Show selected color image if available */}
+                      {(() => {
+                        if (isUsingStaticData) {
+                          const staticProduct = displayProduct as Product;
+                          return (
+                            <div
+                              className="w-11 h-11 rounded-full"
+                              style={{ backgroundColor: selectedColor?.toLowerCase() || '#3B82F6' }}
+                            />
+                          );
+                        } else {
+                          const selectedColorImage = (displayProduct as any).images.find((img: any) => img.variation_value === selectedColor);
+                          return selectedColorImage ? (
+                            <Image
+                              src={selectedColorImage.url}
+                              alt={`${selectedColor} Color`}
+                              width={44}
+                              height={44}
+                              className="w-11 h-11 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div
+                              className="w-11 h-11 rounded-full"
+                              style={{ backgroundColor: selectedColor?.toLowerCase() || '#3B82F6' }}
+                            />
+                          );
+                        }
+                      })()}
+                      <span className="text-xs font-normal text-black capitalize">{selectedColor}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               {/* Product Features */}
               <div className="bg-white border-t border-border-primary">
@@ -497,14 +748,33 @@ export default function ProductPage() {
             
             <div className="flex flex-col lg:flex-row items-center justify-center gap-8">
               <div className="flex flex-col items-center">
-                <Image 
-                  src="/images/img_button_margin_light_blue_900.svg" 
-                  alt="Royal Color" 
-                  width={38} 
-                  height={38}
-                  className="mb-3"
-                />
-                <span className="text-xs font-bold text-black">Royal</span>
+                {(() => {
+                  if (isUsingStaticData) {
+                    return (
+                      <div
+                        className="w-9.5 h-9.5 rounded-full mb-3"
+                        style={{ backgroundColor: selectedColor?.toLowerCase() || '#3B82F6' }}
+                      />
+                    );
+                  } else {
+                    const selectedColorImage = (displayProduct as any).images.find((img: any) => img.variation_value === selectedColor);
+                    return selectedColorImage ? (
+                      <Image
+                        src={selectedColorImage.url}
+                        alt={`${selectedColor} Color`}
+                        width={38}
+                        height={38}
+                        className="mb-3 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div
+                        className="w-9.5 h-9.5 rounded-full mb-3"
+                        style={{ backgroundColor: selectedColor?.toLowerCase() || '#3B82F6' }}
+                      />
+                    );
+                  }
+                })()}
+                <span className="text-xs font-bold text-black capitalize">{selectedColor || 'Color'}</span>
               </div>
               
               <div className="flex flex-col items-center">
@@ -631,6 +901,7 @@ export default function ProductPage() {
         </section>
       </main>
 
-    </div>
+      </div>
+    </ProductErrorBoundary>
   )
 }

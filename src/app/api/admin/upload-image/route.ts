@@ -11,19 +11,22 @@ export async function POST(request: NextRequest) {
     const productId = formData.get('productId') as string;
     const folder = formData.get('folder') as string;
 
-    if (!file || !productId) {
+    if (!file) {
       return NextResponse.json(
-        { error: 'File and productId are required' },
+        { error: 'File is required' },
         { status: 400 }
       );
     }
+
+    // For new product creation, generate a temporary ID if not provided
+    const finalProductId = productId || `temp_${Date.now()}_${Math.random().toString(36).substring(2)}`;
 
     // Create image service instance
     const imageService = createImageService(storage, databases);
 
     // Upload the file using the image service
     const uploadResult = await imageService.uploadFromFile(file, {
-      folder: folder || `products/${productId}`,
+      folder: folder || `products/${finalProductId}`,
       generateThumbnails: true,
       quality: 80,
       format: 'webp'
