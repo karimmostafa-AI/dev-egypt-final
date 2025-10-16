@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import SearchBar from './SearchBar';
 
 interface Brand {
   id: string;
@@ -64,6 +65,15 @@ const Nav: React.FC = () => {
             <Link href="/catalog" className="text-gray-700 hover:text-blue-600 transition-colors">
               Catalog
             </Link>
+
+            {/* Search Bar */}
+            <div className="w-80">
+              <SearchBar
+                placeholder="Search products..."
+                className="w-full"
+                showSuggestions={true}
+              />
+            </div>
 
             {/* Brands Dropdown */}
             <div className="relative">
@@ -140,6 +150,9 @@ const Nav: React.FC = () => {
 
           {/* User Actions */}
           <div className="hidden md:flex items-center space-x-4">
+            <Link href="/wishlist" className="text-gray-700 hover:text-blue-600 transition-colors">
+              Wishlist
+            </Link>
             <Link href="/account" className="text-gray-700 hover:text-blue-600 transition-colors">
               Account
             </Link>
@@ -172,6 +185,15 @@ const Nav: React.FC = () => {
               <Link href="/catalog" className="block text-gray-700 hover:text-blue-600 transition-colors">
                 Catalog
               </Link>
+
+              {/* Mobile Search */}
+              <div className="px-4">
+                <SearchBar
+                  placeholder="Search products..."
+                  className="w-full"
+                  showSuggestions={true}
+                />
+              </div>
 
               {/* Mobile Brands */}
               <div>
@@ -213,6 +235,9 @@ const Nav: React.FC = () => {
               </Link>
 
               <div className="border-t border-gray-200 pt-4 space-y-4">
+                <Link href="/wishlist" className="block text-gray-700 hover:text-blue-600 transition-colors">
+                  Wishlist
+                </Link>
                 <Link href="/account" className="block text-gray-700 hover:text-blue-600 transition-colors">
                   Account
                 </Link>

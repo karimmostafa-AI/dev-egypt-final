@@ -75,6 +75,27 @@ export default function ColorVariationImageManager({
     }
   }
 
+  // Handle drag and drop
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
+  const handleDrop = (e: React.DragEvent, colorId: string, type: 'mainImageUrl' | 'backImageUrl') => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length > 0) {
+      handleFileUpload(colorId, type, files[0])
+    }
+  }
+
   const handleUrlSubmit = (colorId: string, type: 'mainImageUrl' | 'backImageUrl') => {
     const url = urlInputs[colorId]?.[type === 'mainImageUrl' ? 'main' : 'back']
     
@@ -171,11 +192,18 @@ export default function ColorVariationImageManager({
 
             <TabsContent value="upload" className="mt-3">
               <div
-                onClick={() => fileInputRefs.current[color.id]?.[type]?.click()}
+                onClick={() => !disabled && !isUploading && fileInputRefs.current[color.id]?.[type]?.click()}
+                onDragOver={handleDragOver}
+                onDragEnter={handleDragEnter}
+                onDrop={(e) => !disabled && handleDrop(e, color.id, fieldKey)}
                 className={`
-                  border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors
-                  ${isUploading ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'}
+                  relative border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all duration-200
+                  ${isUploading
+                    ? 'border-blue-500 bg-blue-50 scale-105'
+                    : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50 hover:shadow-lg'
+                  }
                   ${disabled && 'opacity-50 cursor-not-allowed'}
+                  ${!disabled && !isUploading && 'hover:scale-105'}
                 `}
               >
                 <input
@@ -193,16 +221,38 @@ export default function ColorVariationImageManager({
                   disabled={disabled || isUploading}
                   className="hidden"
                 />
-                
-                <div className="space-y-2">
-                  <ImageIcon className="w-12 h-12 mx-auto text-gray-400" />
-                  <p className="text-sm font-medium">
-                    {isUploading ? 'Uploading...' : 'Click to upload or drag and drop'}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    PNG, JPG, WebP up to 5MB
-                  </p>
+
+                <div className="space-y-3">
+                  {isUploading ? (
+                    <>
+                      <div className="w-12 h-12 mx-auto bg-blue-100 rounded-full flex items-center justify-center">
+                        <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                      </div>
+                      <p className="text-sm font-medium text-blue-700">
+                        Uploading image...
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-16 h-16 mx-auto bg-gradient-to-br from-blue-100 to-purple-100 rounded-full flex items-center justify-center">
+                        <ImageIcon className="w-8 h-8 text-blue-500" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-gray-700">
+                          Drop image here or click to browse
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          PNG, JPG, WebP up to 5MB • Recommended: 800x800px
+                        </p>
+                      </div>
+                    </>
+                  )}
                 </div>
+
+                {/* Drag overlay */}
+                {!isUploading && (
+                  <div className="absolute inset-0 border-2 border-blue-500 bg-blue-50 rounded-xl opacity-0 transition-opacity duration-200 pointer-events-none" />
+                )}
               </div>
             </TabsContent>
 

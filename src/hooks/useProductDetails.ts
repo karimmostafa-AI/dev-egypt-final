@@ -137,7 +137,7 @@ export const useProductDetails = (
       // Use images directly without ImageService processing to avoid URL override
       const directImages = product.images.map(img => ({
         original: img,
-        url: img.url,
+        url: img.image_url,
         thumbnailUrls: {},
         optimizedUrls: {}
       }));

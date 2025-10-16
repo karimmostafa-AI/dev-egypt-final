@@ -186,25 +186,45 @@ export class AuthServiceClass {
       }
 
       // Get current user - Appwrite handles HttpOnly cookie automatically
-      // Suppress console errors since guest/unauthenticated state is normal
-      const user = await suppressConsoleError(() => account.get());
+      console.log('🔍 Attempting to get current user...');
+      const user = await account.get();
+      console.log('✅ Current user retrieved successfully:', user.$id);
 
       return {
         success: true,
         data: user
       };
     } catch (error: any) {
+      // Log the actual error for debugging with safe property access
+      console.error('❌ Auth service error getting current user:', {
+        message: error?.message || 'No message available',
+        code: error?.code || 'No code available',
+        type: error?.type || 'No type available',
+        stack: error?.stack || 'No stack trace available',
+        errorObject: error,
+        errorConstructor: error?.constructor?.name || 'Unknown constructor',
+        errorKeys: error ? Object.keys(error) : 'No keys (error is null/undefined)'
+      });
+
       // Handle authentication errors gracefully - including missing scopes for guests
       // These are normal for unauthenticated users, so don't log them as errors
       if (error?.code === 401 || error?.message?.includes('missing scopes') || error?.message?.includes('User (role: guests)')) {
+        console.log('ℹ️ User not authenticated (normal for guests)');
         return {
           success: false,
           error: 'User not authenticated'
         };
       }
 
-      // Only log unexpected errors
-      console.error('Unexpected error getting current user:', error);
+      // For network errors, provide more specific error message
+      if (error?.message?.includes('Failed to fetch') || error?.message?.includes('NetworkError')) {
+        console.error('🌐 Network error - check Appwrite endpoint configuration');
+        return {
+          success: false,
+          error: 'Network error - unable to connect to authentication service'
+        };
+      }
+
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to get current user'
@@ -460,6 +480,48 @@ export class AuthServiceClass {
     }
   }
 
+  // Test Appwrite connectivity
+  async testConnection(): Promise<AuthResponse<{ endpoint: string; projectId: string; connected: boolean }>> {
+    try {
+      console.log('🧪 Testing Appwrite connection...');
+
+      // Test basic connectivity by trying to get account info
+      // This will fail if the endpoint is not reachable
+      await account.get();
+
+      console.log('✅ Appwrite connection test successful');
+      return {
+        success: true,
+        data: {
+          endpoint: process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || 'unknown',
+          projectId: process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || 'unknown',
+          connected: true
+        }
+      };
+    } catch (error: any) {
+      console.error('❌ Appwrite connection test failed:', {
+        message: error?.message || 'No message available',
+        code: error?.code || 'No code available',
+        type: error?.type || 'No type available',
+        endpoint: process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT,
+        projectId: process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID,
+        errorObject: error,
+        errorConstructor: error?.constructor?.name || 'Unknown constructor',
+        errorKeys: error ? Object.keys(error) : 'No keys (error is null/undefined)'
+      });
+
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Connection test failed',
+        data: {
+          endpoint: process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || 'unknown',
+          projectId: process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || 'unknown',
+          connected: false
+        }
+      };
+    }
+  }
+
   // Get user role (admin, customer, etc.) from Appwrite preferences
   async getUserRole(userId?: string): Promise<AuthResponse<string>> {
     try {
@@ -504,3 +566,11 @@ export class AuthServiceClass {
 
 // Export singleton instance
 export const authService = new AuthServiceClass();
+
+// Expose to window object for debugging in development
+if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+  (window as any).authService = authService;
+  (window as any).testAppwriteConnection = () => authService.testConnection();
+  console.log('🔧 Auth service exposed to window for debugging');
+  console.log('💡 Try: window.testAppwriteConnection() in console');
+}

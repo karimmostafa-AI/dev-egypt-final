@@ -39,8 +39,10 @@ export function convertLegacyVariations(
         id: variation.id || `legacy_color_${index}`,
         name: variation.colorName,
         hexCode: variation.color,
-        frontImageUrl: variation.imageUrl || undefined,
-        backImageUrl: undefined // Legacy format doesn't have back images
+        mainImageUrl: variation.imageUrl || '',
+        backImageUrl: '', // Legacy format doesn't have back images
+        isActive: true,
+        order: index
       })
     }
   })
@@ -52,8 +54,11 @@ export function convertLegacyVariations(
       sizes.push({
         id: variation.id || `legacy_size_${index}`,
         name: variation.size,
+        sku: `LEGACY-${variation.id || index}`, // Default SKU for legacy products
         stock: 100, // Default stock for legacy products
-        priceModifier: 0 // No price modifier in legacy format
+        priceModifier: 0, // No price modifier in legacy format
+        isActive: true,
+        order: index
       })
     }
   })
@@ -110,12 +115,14 @@ export function parseColorOptions(
       // Check if it's compact format (has 'i' instead of 'id')
       if (parsed.length > 0 && parsed[0].i) {
         // Expand compact format
-        return parsed.map(c => ({
+        return parsed.map((c, index) => ({
           id: c.i,
           name: c.n,
           hexCode: c.h,
-          frontImageUrl: c.f,
-          backImageUrl: c.b
+          mainImageUrl: c.f || '',
+          backImageUrl: c.b || '',
+          isActive: true,
+          order: index
         }))
       }
       
@@ -148,11 +155,14 @@ export function parseSizeOptions(
       // Check if it's compact format (has 'i' instead of 'id')
       if (parsed.length > 0 && parsed[0].i) {
         // Expand compact format
-        return parsed.map(s => ({
+        return parsed.map((s, index) => ({
           id: s.i,
           name: s.n,
+          sku: `COMPACT-${s.i}`,
           stock: s.s,
-          priceModifier: s.p
+          priceModifier: s.p,
+          isActive: true,
+          order: index
         }))
       }
       
@@ -273,7 +283,7 @@ export function getProductColorSwatches(product: any): Array<{
     id: color.id,
     name: color.name,
     hexCode: color.hexCode,
-    imageUrl: color.frontImageUrl
+    imageUrl: color.mainImageUrl
   }))
 }
 

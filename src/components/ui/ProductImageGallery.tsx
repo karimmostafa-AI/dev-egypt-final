@@ -112,7 +112,7 @@ export const ProductImageGallery: React.FC<ProductImageGalleryProps> = ({
       return {
         src: image.url,
         alt: image.alt_text,
-        color: image.variation_value
+        color: image.variation_value || image.variation_id
       };
     } else {
       // Legacy format

@@ -17,10 +17,16 @@ export async function GET(request: NextRequest) {
     // Check if Appwrite is properly configured
     const projectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID
     const apiKey = process.env.APPWRITE_API_KEY
-    
+
+    console.log('🔧 Categories API - Checking Appwrite configuration:', {
+      projectId: projectId ? '✓' : '✗',
+      apiKey: apiKey ? '✓' : '✗',
+      endpoint: process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT
+    })
+
     if (!projectId || projectId === 'your-project-id-here' || projectId === 'disabled' || !apiKey || apiKey === 'your-api-key-here' || apiKey === 'disabled') {
       // Return fallback data when Appwrite is not configured
-      console.warn('Appwrite not configured, returning fallback category data')
+      console.warn('⚠️ Appwrite not configured, returning fallback category data')
       const fallbackCategories = [
         { $id: 'women-fallback', name: 'Women', status: true, $createdAt: new Date().toISOString(), $updatedAt: new Date().toISOString() },
         { $id: 'men-fallback', name: 'Men', status: true, $createdAt: new Date().toISOString(), $updatedAt: new Date().toISOString() },
@@ -58,6 +64,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Original Appwrite logic (when properly configured)
+    console.log('🔗 Attempting to connect to Appwrite for categories...')
     const { databases } = await createAdminClient()
 
     // Build queries
@@ -77,23 +84,42 @@ export async function GET(request: NextRequest) {
       queries.push(Query.equal("status", status === "true"))
     }
 
+    console.log('📋 Fetching categories with queries:', queries)
+
     // Fetch categories with timeout
     const result = await Promise.race([
       databases.listDocuments(DATABASE_ID, CATEGORIES_COLLECTION_ID, queries),
-      new Promise((_, reject) => 
+      new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Request timeout')), 10000)
       )
     ]) as any
 
+    console.log('✅ Categories fetched successfully:', result.documents.length, 'categories')
     return NextResponse.json({
       categories: result.documents,
       total: result.total,
     })
 
   } catch (error: any) {
-    console.error("Error fetching categories:", error.message || error)
+    console.error("❌ Error fetching categories:", {
+      message: error.message || error,
+      code: error.code,
+      type: error.type,
+      stack: error.stack
+    })
+
+    // Provide more specific error messages based on error type
+    let errorMessage = "Failed to fetch categories"
+    if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
+      errorMessage = "Network error - unable to connect to database"
+    } else if (error.message?.includes('timeout')) {
+      errorMessage = "Request timeout - database connection is slow"
+    } else if (error.message?.includes('permission') || error.message?.includes('unauthorized')) {
+      errorMessage = "Permission error - check API key configuration"
+    }
+
     return NextResponse.json(
-      { error: error.message || "Failed to fetch categories" },
+      { error: errorMessage, details: error.message || error },
       { status: 500 }
     )
   }
@@ -102,6 +128,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const categoryData = await request.json()
+    console.log('📝 Creating category:', categoryData)
 
     // Create admin client
     const { databases } = await createAdminClient()
@@ -123,6 +150,8 @@ export async function POST(request: NextRequest) {
       status: categoryData.status !== undefined ? categoryData.status : true
     }
 
+    console.log('💾 Saving category to database...')
+
     // Create the category
     const category = await databases.createDocument(
       DATABASE_ID,
@@ -131,12 +160,25 @@ export async function POST(request: NextRequest) {
       categoryToCreate
     )
 
+    console.log('✅ Category created successfully:', category.$id)
     return NextResponse.json({ category }, { status: 201 })
 
   } catch (error: any) {
-    console.error("Error creating category:", error)
+    console.error("❌ Error creating category:", {
+      message: error.message || error,
+      code: error.code,
+      type: error.type
+    })
+
+    let errorMessage = "Failed to create category"
+    if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
+      errorMessage = "Network error - unable to connect to database"
+    } else if (error.message?.includes('permission') || error.message?.includes('unauthorized')) {
+      errorMessage = "Permission error - check API key configuration"
+    }
+
     return NextResponse.json(
-      { error: error.message || "Failed to create category" },
+      { error: errorMessage, details: error.message || error },
       { status: 500 }
     )
   }
@@ -147,6 +189,8 @@ export async function PATCH(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const categoryId = searchParams.get("categoryId")
     const updateData = await request.json()
+
+    console.log('🔄 Updating category:', categoryId, updateData)
 
     if (!categoryId) {
       return NextResponse.json(
@@ -168,6 +212,8 @@ export async function PATCH(request: NextRequest) {
       }
     })
 
+    console.log('💾 Updating category in database...')
+
     // Update the category
     const updatedCategory = await databases.updateDocument(
       DATABASE_ID,
@@ -176,12 +222,25 @@ export async function PATCH(request: NextRequest) {
       filteredUpdateData
     )
 
+    console.log('✅ Category updated successfully:', updatedCategory.$id)
     return NextResponse.json({ category: updatedCategory })
 
   } catch (error: any) {
-    console.error("Error updating category:", error)
+    console.error("❌ Error updating category:", {
+      message: error.message || error,
+      code: error.code,
+      type: error.type
+    })
+
+    let errorMessage = "Failed to update category"
+    if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
+      errorMessage = "Network error - unable to connect to database"
+    } else if (error.message?.includes('permission') || error.message?.includes('unauthorized')) {
+      errorMessage = "Permission error - check API key configuration"
+    }
+
     return NextResponse.json(
-      { error: error.message || "Failed to update category" },
+      { error: errorMessage, details: error.message || error },
       { status: 500 }
     )
   }
@@ -191,6 +250,8 @@ export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const categoryId = searchParams.get("categoryId")
+
+    console.log('🗑️ Deleting category:', categoryId)
 
     if (!categoryId) {
       return NextResponse.json(
@@ -205,12 +266,25 @@ export async function DELETE(request: NextRequest) {
     // Delete the category
     await databases.deleteDocument(DATABASE_ID, CATEGORIES_COLLECTION_ID, categoryId)
 
+    console.log('✅ Category deleted successfully:', categoryId)
     return NextResponse.json({ success: true })
 
   } catch (error: any) {
-    console.error("Error deleting category:", error)
+    console.error("❌ Error deleting category:", {
+      message: error.message || error,
+      code: error.code,
+      type: error.type
+    })
+
+    let errorMessage = "Failed to delete category"
+    if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
+      errorMessage = "Network error - unable to connect to database"
+    } else if (error.message?.includes('permission') || error.message?.includes('unauthorized')) {
+      errorMessage = "Permission error - check API key configuration"
+    }
+
     return NextResponse.json(
-      { error: error.message || "Failed to delete category" },
+      { error: errorMessage, details: error.message || error },
       { status: 500 }
     )
   }

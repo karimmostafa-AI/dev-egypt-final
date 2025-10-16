@@ -154,20 +154,24 @@ export class ProductService implements IProductService {
       return [];
     }
 
-    // If no variations selected, return main images
+    // If no variations selected, return main and gallery images
     if (!selectedVariations || Object.keys(selectedVariations).length === 0) {
       return product.images
         .filter(img => img.image_type === 'main' || img.image_type === 'gallery')
         .sort((a, b) => a.sort_order - b.sort_order);
     }
 
-    // Return images for selected variations
+    // Return images for selected variations using variation_id relationship
     const variationImages = product.images.filter(img => {
       if (img.image_type !== 'variation') return false;
 
       // Check if this image matches the selected variations
       return Object.entries(selectedVariations).every(([type, value]) => {
-        return img.variation_value === value;
+        // Find the variation to get its ID
+        const variation = product.variations.find(v =>
+          v.variation_type === type && v.variation_value === value
+        );
+        return variation && img.variation_id === variation.id;
       });
     });
 
@@ -227,7 +231,8 @@ export class ProductService implements IProductService {
     selectedVariations: ProductVariationSelection
   ): number {
     if (!selectedVariations || Object.keys(selectedVariations).length === 0) {
-      return product.stockQuantity;
+      // Calculate total stock from all variations
+      return product.variations.reduce((total, variation) => total + variation.stock_quantity, 0);
     }
 
     // Find the specific variation combination

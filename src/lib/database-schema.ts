@@ -25,7 +25,7 @@ export interface IndexDefinition {
 
 // Collection Definitions
 export const COLLECTIONS: Record<string, CollectionDefinition> = {
-  // Products Collection
+  // Products Collection - Updated to match current Appwrite database
   products: {
     name: 'Products',
     id: 'products',
@@ -34,42 +34,41 @@ export const COLLECTIONS: Record<string, CollectionDefinition> = {
       { key: 'name', type: 'string', required: true, size: 255 },
       { key: 'slug', type: 'string', required: true, size: 255 },
       { key: 'description', type: 'string', required: true, size: 2000 },
-      { key: 'shortDescription', type: 'string', required: false, size: 500 },
 
       // Pricing
       { key: 'price', type: 'float', required: true },
-      { key: 'compareAtPrice', type: 'float', required: false },
-      { key: 'costPerItem', type: 'float', required: false },
+      { key: 'discount_price', type: 'float', required: false },
 
       // Inventory
-      { key: 'sku', type: 'string', required: true, size: 100 },
-      { key: 'stockQuantity', type: 'integer', required: true, default: 0 },
-      { key: 'lowStockThreshold', type: 'integer', required: true, default: 5 },
-      { key: 'trackInventory', type: 'boolean', required: true, default: true },
+      { key: 'units', type: 'integer', required: true, default: 1 },
+      { key: 'min_order_quantity', type: 'integer', required: true, default: 1 },
 
       // Organization
-      { key: 'categoryId', type: 'string', required: true, size: 36 },
-      { key: 'tags', type: 'string', required: false, array: true },
-      { key: 'status', type: 'string', required: true, default: 'draft' },
+      { key: 'brand_id', type: 'string', required: true, size: 255 },
+      { key: 'category_id', type: 'string', required: true, size: 255 },
 
-      // Media
-      { key: 'images', type: 'json', required: true },
-      { key: 'featuredImageId', type: 'string', required: false, size: 36 },
+      // Status
+      { key: 'is_active', type: 'boolean', required: true, default: true },
+      { key: 'is_new', type: 'boolean', required: true, default: false },
+      { key: 'is_featured', type: 'boolean', required: true, default: false },
+      { key: 'hasVariations', type: 'boolean', required: true, default: false },
 
-      // SEO
-      { key: 'seoTitle', type: 'string', required: false, size: 255 },
-      { key: 'seoDescription', type: 'string', required: false, size: 500 },
+      // SEO & Meta
+      { key: 'meta_title', type: 'string', required: false, size: 255 },
+      { key: 'meta_description', type: 'string', required: false, size: 500 },
+      { key: 'meta_keywords', type: 'string', required: false, size: 1000 },
 
-      // Metadata
-      { key: 'viewCount', type: 'integer', required: true, default: 0 },
-      { key: 'salesCount', type: 'integer', required: true, default: 0 },
+      // System fields
+      { key: 'lastViewedAt', type: 'datetime', required: false },
     ],
     indexes: [
       { key: 'name', type: 'fulltext', attributes: ['name', 'description'] },
       { key: 'slug', type: 'unique', attributes: ['slug'] },
-      { key: 'sku', type: 'unique', attributes: ['sku'] },
-      { key: 'category', type: 'key', attributes: ['categoryId'] },
-      { key: 'status', type: 'key', attributes: ['status'] },
+      { key: 'brand_id', type: 'key', attributes: ['brand_id'] },
+      { key: 'category_id', type: 'key', attributes: ['category_id'] },
+      { key: 'is_active', type: 'key', attributes: ['is_active'] },
+      { key: 'is_featured', type: 'key', attributes: ['is_featured'] },
+      { key: 'hasVariations', type: 'key', attributes: ['hasVariations'] },
       { key: 'price', type: 'key', attributes: ['price'] },
     ]
   },

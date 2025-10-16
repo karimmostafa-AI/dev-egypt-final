@@ -28,6 +28,7 @@ export interface UseAuthReturn {
   register: (email: string, password: string, name: string) => Promise<void>;
   clearError: () => void;
   refreshUser: () => Promise<void>;
+  testConnection: () => Promise<{ success: boolean; data?: any; error?: string }>;
 }
 
 // Appwrite-integrated authentication hook
@@ -54,7 +55,9 @@ export const useAuth = (): UseAuthReturn => {
 
         // Silently check for an authenticated user in the browser
         // Appwrite will manage session cookies automatically
+        console.log('🔐 Initializing auth check...');
         const userResponse = await authService.getCurrentUser();
+        console.log('🔐 Auth check completed:', userResponse);
 
         if (userResponse.success && userResponse.data) {
           const user: User = {
@@ -316,6 +319,19 @@ export const useAuth = (): UseAuthReturn => {
     setAuth(prev => ({ ...prev, error: null }));
   }, []);
 
+  // Test function for debugging Appwrite connectivity
+  const testConnection = useCallback(async () => {
+    console.log('🧪 Testing Appwrite connection from useAuth...');
+    try {
+      const result = await authService.testConnection();
+      console.log('🧪 Connection test result:', result);
+      return result;
+    } catch (error) {
+      console.error('🧪 Connection test error:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Test failed' };
+    }
+  }, []);
+
   return {
     auth,
     login,
@@ -323,5 +339,6 @@ export const useAuth = (): UseAuthReturn => {
     register,
     clearError,
     refreshUser,
+    testConnection,
   };
 };

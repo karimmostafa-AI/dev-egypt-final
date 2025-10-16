@@ -151,7 +151,7 @@ export default function ProductPage() {
         return {
           src: imageData.url,
           alt: imageData.alt_text || `${displayProduct.name} - Image`,
-          color: imageData.variation_value || 'Default',
+          color: imageData.variation_id || 'Default',
           isMain: imageData.image_type === 'main'
         };
       });
@@ -218,7 +218,7 @@ export default function ProductPage() {
         type: 'color',
         required: true,
         options: colorVariations.map((variation: any) => {
-          const image = dynamicProduct.images?.find((img: any) => img.variation_value === variation.variation_value);
+          const image = dynamicProduct.images?.find((img: any) => img.variation_id === variation.id);
           return {
             id: variation.id,
             value: variation.variation_value,
@@ -226,7 +226,7 @@ export default function ProductPage() {
             available: variation.stock_quantity > 0,
             stockCount: variation.stock_quantity,
             priceModifier: variation.price_modifier || 0,
-            image: image?.url
+            image: image?.image_url
           };
         })
       });
@@ -343,7 +343,7 @@ export default function ProductPage() {
       } else {
         const variation = (displayProduct as any).variations.find((v: any) => v.id === optionId);
         if (variation) {
-          totalPrice += variation.price_modifier;
+          totalPrice += variation.price_modifier || 0;
         }
       }
     });
@@ -373,7 +373,7 @@ export default function ProductPage() {
       } else {
         const variation = (displayProduct as any).variations.find((v: any) => v.id === optionId);
         if (variation) {
-          totalPrice += variation.price_modifier;
+          totalPrice += variation.price_modifier || 0;
         }
       }
     });
@@ -640,10 +640,10 @@ export default function ProductPage() {
                             />
                           );
                         } else {
-                          const selectedColorImage = (displayProduct as any).images.find((img: any) => img.variation_value === selectedColor);
+                          const selectedColorImage = (displayProduct as any).images.find((img: any) => img.variation_id === selectedColor);
                           return selectedColorImage ? (
                             <Image
-                              src={selectedColorImage.url}
+                              src={selectedColorImage.image_url}
                               alt={`${selectedColor} Color`}
                               width={44}
                               height={44}
@@ -757,10 +757,10 @@ export default function ProductPage() {
                       />
                     );
                   } else {
-                    const selectedColorImage = (displayProduct as any).images.find((img: any) => img.variation_value === selectedColor);
+                    const selectedColorImage = (displayProduct as any).images.find((img: any) => img.variation_id === selectedColor);
                     return selectedColorImage ? (
                       <Image
-                        src={selectedColorImage.url}
+                        src={selectedColorImage.image_url}
                         alt={`${selectedColor} Color`}
                         width={38}
                         height={38}

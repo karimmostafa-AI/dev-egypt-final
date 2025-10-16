@@ -59,8 +59,8 @@ function getClientIP(request: NextRequest): string {
     return cfConnectingIP;
   }
   
-  // Fallback to request IP (might be localhost in development)
-  return request.ip || 'unknown';
+  // Fallback for development (no IP available)
+  return 'unknown';
 }
 
 export async function GET(request: NextRequest) {

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { ArrowLeft, Save, Upload, X, Image, ChevronLeft, ChevronRight, Check } from "lucide-react"
+import { ArrowLeft, Save, Upload, X, Image, ChevronLeft, ChevronRight, Check, RefreshCw } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -17,7 +17,7 @@ import Link from "next/link"
 import ColorSelector from "@/components/admin/ColorSelector"
 import SizeSelector from "@/components/admin/SizeSelector"
 import ColorVariationImageManager from "@/components/admin/ColorVariationImageManager"
-import { ColorOption, SizeOption, ProductVariation } from "@/types/product-variations"
+import { ColorOption, SizeOption, ProductVariation as VariationType } from "@/types/product-variations"
 import { generateProductVariations, validateVariations } from "@/lib/variation-generator"
 
 // Color palette for product variations
@@ -63,7 +63,7 @@ interface Category {
   status: boolean
 }
 
-interface ProductVariation {
+interface LocalProductVariation {
   id: string
   color?: string
   colorName?: string
@@ -103,15 +103,18 @@ export default function NewProductPage() {
     mainImageUrl: "",
     backImageId: "",
     backImageUrl: "",
+    meta_title: "",
+    meta_description: "",
+    meta_keywords: "",
   })
 
   const [productImages, setProductImages] = useState<ProductImage[]>([])
-  const [oldProductVariations, setOldProductVariations] = useState<ProductVariation[]>([])
+  const [oldProductVariations, setOldProductVariations] = useState<any[]>([])
   
   // New variation state
   const [selectedColors, setSelectedColors] = useState<ColorOption[]>([])
   const [selectedSizes, setSelectedSizes] = useState<SizeOption[]>([])
-  const [generatedVariations, setGeneratedVariations] = useState<ProductVariation[]>([])
+  const [generatedVariations, setGeneratedVariations] = useState<VariationType[]>([])
   const [hasVariations, setHasVariations] = useState(false)
 
   const [statusSettings, setStatusSettings] = useState({
@@ -138,17 +141,19 @@ export default function NewProductPage() {
   const fetchBrands = async () => {
     try {
       setLoadingBrands(true)
+      console.log('🔄 Fetching brands for dropdown...')
       const response = await fetch('/api/admin/brands?status=true')
       const data = await response.json()
-      
+
       if (data.error) {
-        console.error("Error fetching brands:", data.error)
+        console.error("❌ Error fetching brands:", data.error, data.details || '')
         return
       }
 
+      console.log('✅ Brands fetched successfully:', data.brands?.length || 0, 'brands')
       setBrands(data.brands || [])
     } catch (error) {
-      console.error("Failed to fetch brands:", error)
+      console.error("❌ Failed to fetch brands:", error)
     } finally {
       setLoadingBrands(false)
     }
@@ -158,17 +163,19 @@ export default function NewProductPage() {
   const fetchCategories = async () => {
     try {
       setLoadingCategories(true)
+      console.log('🔄 Fetching categories for dropdown...')
       const response = await fetch('/api/admin/categories?status=true')
       const data = await response.json()
-      
+
       if (data.error) {
-        console.error("Error fetching categories:", data.error)
+        console.error("❌ Error fetching categories:", data.error, data.details || '')
         return
       }
 
+      console.log('✅ Categories fetched successfully:', data.categories?.length || 0, 'categories')
       setCategories(data.categories || [])
     } catch (error) {
-      console.error("Failed to fetch categories:", error)
+      console.error("❌ Failed to fetch categories:", error)
     } finally {
       setLoadingCategories(false)
     }
@@ -179,6 +186,33 @@ export default function NewProductPage() {
     fetchBrands()
     fetchCategories()
   }, [])
+
+  // Refresh categories when window gains focus (in case user created a category in another tab)
+  useEffect(() => {
+    const handleFocus = () => {
+      console.log('🔄 Window focused - refreshing categories...')
+      fetchCategories()
+    }
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'newCategoryAdded' || e.key === 'categoryUpdated') {
+        console.log('🔄 Storage change detected - refreshing categories...')
+        fetchCategories()
+      }
+    }
+
+    window.addEventListener('focus', handleFocus)
+    window.addEventListener('storage', handleStorageChange)
+    return () => {
+      window.removeEventListener('focus', handleFocus)
+      window.removeEventListener('storage', handleStorageChange)
+    }
+  }, [])
+
+  // Add manual refresh function for categories
+  const refreshCategories = async () => {
+    await fetchCategories()
+  }
 
   // Generate slug from name
   const generateSlug = (name: string) => {
@@ -221,6 +255,20 @@ export default function NewProductPage() {
           alert("Category selection is required")
           return false
         }
+
+        // Meta fields validation (optional but with warnings)
+        if (basicInfo.meta_description && basicInfo.meta_description.length > 160) {
+          if (!confirm("Meta description is longer than 160 characters. This may affect SEO. Continue?")) {
+            return false
+          }
+        }
+
+        if (basicInfo.meta_title && basicInfo.meta_title.length > 60) {
+          if (!confirm("Meta title is longer than 60 characters. This may be truncated in search results. Continue?")) {
+            return false
+          }
+        }
+
         return true
       case 2:
         if (productImages.length < 2) {
@@ -466,17 +514,33 @@ export default function NewProductPage() {
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center space-x-4">
-        <Button variant="ghost" size="icon" asChild>
-          <Link href="/admin/products">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-        </Button>
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Add New Product</h1>
-          <p className="text-muted-foreground">
-            Create a new product for your catalog
-          </p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-4">
+          <Button variant="ghost" size="icon" asChild>
+            <Link href="/admin/products">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Add New Product</h1>
+            <p className="text-muted-foreground">
+              Create a new product for your catalog
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              fetchCategories()
+              fetchBrands()
+            }}
+            disabled={loadingCategories || loadingBrands}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${loadingCategories || loadingBrands ? 'animate-spin' : ''}`} />
+            Refresh Data
+          </Button>
         </div>
       </div>
 
@@ -548,6 +612,62 @@ export default function NewProductPage() {
                     />
                   </div>
 
+                  <div className="space-y-2">
+                    <Label htmlFor="meta_title">Meta Title (SEO)</Label>
+                    <Input
+                      id="meta_title"
+                      placeholder="Premium Cotton T-Shirt - Best Quality"
+                      value={basicInfo.meta_title}
+                      onChange={(e) => updateBasicInfo("meta_title", e.target.value)}
+                      className={basicInfo.meta_title.length > 60 ? "border-orange-500 focus:border-orange-500" : ""}
+                    />
+                    <div className="flex justify-between items-center">
+                      <p className="text-xs text-muted-foreground">
+                        Title for search engines (leave empty to use product name)
+                      </p>
+                      <span className={`text-xs ${basicInfo.meta_title.length > 60 ? 'text-orange-600 font-medium' : 'text-gray-500'}`}>
+                        {basicInfo.meta_title.length}/60
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="meta_description">Meta Description (SEO)</Label>
+                    <Textarea
+                      id="meta_description"
+                      placeholder="High-quality premium cotton t-shirt perfect for casual wear. Made from 100% organic cotton with excellent comfort and durability."
+                      className={`min-h-20 ${basicInfo.meta_description.length > 160 ? "border-orange-500 focus:border-orange-500" : ""}`}
+                      value={basicInfo.meta_description}
+                      onChange={(e) => updateBasicInfo("meta_description", e.target.value)}
+                    />
+                    <div className="flex justify-between items-center">
+                      <p className="text-xs text-muted-foreground">
+                        Description for search engines (150-160 characters recommended)
+                      </p>
+                      <span className={`text-xs ${basicInfo.meta_description.length > 160 ? 'text-orange-600 font-medium' : 'text-gray-500'}`}>
+                        {basicInfo.meta_description.length}/160
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="meta_keywords">Meta Keywords (SEO)</Label>
+                    <Input
+                      id="meta_keywords"
+                      placeholder="cotton t-shirt, premium clothing, casual wear"
+                      value={basicInfo.meta_keywords}
+                      onChange={(e) => updateBasicInfo("meta_keywords", e.target.value)}
+                    />
+                    <div className="flex justify-between items-center">
+                      <p className="text-xs text-muted-foreground">
+                        Comma-separated keywords for better SEO (optional)
+                      </p>
+                      <span className="text-xs text-gray-500">
+                        {basicInfo.meta_keywords.split(',').filter(k => k.trim()).length} keywords
+                      </span>
+                    </div>
+                  </div>
+
                 </CardContent>
               </Card>
             </div>
@@ -615,19 +735,56 @@ export default function NewProductPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="category_id">Category *</Label>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="category_id">Category *</Label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={refreshCategories}
+                        disabled={loadingCategories}
+                        className="h-6 px-2 text-xs"
+                      >
+                        <RefreshCw className={`h-3 w-3 mr-1 ${loadingCategories ? 'animate-spin' : ''}`} />
+                        Refresh
+                      </Button>
+                    </div>
                     <Select value={basicInfo.category_id} onValueChange={(value) => updateBasicInfo("category_id", value)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder={loadingCategories ? "Loading categories..." : "Select a category"} />
+                      <SelectTrigger className={loadingCategories ? "animate-pulse" : ""}>
+                        <SelectValue placeholder={
+                          loadingCategories
+                            ? "Loading categories..."
+                            : categories.length === 0
+                              ? "No categories available"
+                              : "Select a category"
+                        } />
                       </SelectTrigger>
                       <SelectContent>
-                        {categories.map((category) => (
-                          <SelectItem key={category.$id} value={category.$id}>
-                            {category.name}
-                          </SelectItem>
-                        ))}
+                        {categories.length === 0 && !loadingCategories ? (
+                          <div className="p-2 text-sm text-muted-foreground text-center">
+                            No categories found. Please create a category first.
+                          </div>
+                        ) : (
+                          categories.map((category) => (
+                            <SelectItem key={category.$id} value={category.$id}>
+                              <div className="flex items-center gap-2">
+                                <span>{category.name}</span>
+                                {category.status === false && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    Inactive
+                                  </Badge>
+                                )}
+                              </div>
+                            </SelectItem>
+                          ))
+                        )}
                       </SelectContent>
                     </Select>
+                    {categories.length > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        {categories.length} categories available
+                      </p>
+                    )}
                   </div>
 
                   <div className="space-y-2">
@@ -858,7 +1015,7 @@ export default function NewProductPage() {
                           </div>
                           <div className="flex gap-4 text-xs text-gray-600">
                             <span>Stock: {variation.stock}</span>
-                            <span>Price: ${variation.price.toFixed(2)}</span>
+                            <span>Price: ${variation.price?.toFixed(2)}</span>
                           </div>
                         </div>
                       )

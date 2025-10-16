@@ -7,6 +7,8 @@ import { useRouter } from 'next/navigation';
 import { ProductColor, ProductVariation } from '@/lib/product-variation-service';
 import { UploadResult } from '@/lib/image-service';
 import LazyImage from '@/components/ui/LazyImage';
+import { useWishlist } from '@/hooks/useWishlist';
+import { Heart } from 'lucide-react';
 
 export interface ProductCardProps {
   product: {
@@ -67,6 +69,10 @@ const ProductCard: React.FC<ProductCardProps> = ({
   const frontImageRef = useRef<HTMLImageElement>(null);
   const backImageRef = useRef<HTMLImageElement>(null);
   const router = useRouter();
+
+  // Use wishlist functionality
+  const { isInWishlist, toggleWishlist, wishlist } = useWishlist(true);
+  const isWishlisted = isInWishlist(product.$id);
 
   // Get current color data
   const currentColor = product.colorOptions?.find(c => c.id === animationState.currentColorId);
@@ -210,13 +216,22 @@ const ProductCard: React.FC<ProductCardProps> = ({
 
       {/* Wishlist Button */}
       <button
-        onClick={() => onWishlistToggle?.(product.$id)}
-        className="absolute top-3 right-3 z-10 p-2 bg-white bg-opacity-80 rounded-full hover:bg-opacity-100 transition-all"
-        aria-label="Add to wishlist"
+        onClick={(e) => {
+          e.stopPropagation();
+          toggleWishlist(product.$id);
+        }}
+        className={`absolute top-3 right-3 z-10 p-2 rounded-full transition-all wishlist-button ${
+          isWishlisted
+            ? 'bg-red-50 text-red-500'
+            : 'bg-white bg-opacity-80 text-gray-600 hover:bg-opacity-100 hover:text-red-500'
+        }`}
+        aria-label={isWishlisted ? "Remove from wishlist" : "Add to wishlist"}
       >
-        <svg className="w-5 h-5 text-gray-600 hover:text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-        </svg>
+        <Heart
+          className={`w-5 h-5 transition-colors ${
+            isWishlisted ? 'fill-current text-red-500' : ''
+          }`}
+        />
       </button>
 
       {/* Product Card */}

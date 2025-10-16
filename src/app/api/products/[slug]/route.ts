@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { Query } from "node-appwrite"
 import { createAdminClient } from "@/lib/appwrite-admin"
+import { Client, Databases, Storage } from "appwrite"
 
 // Get database ID from environment
 const DATABASE_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || ''
@@ -8,6 +9,15 @@ const PRODUCTS_COLLECTION_ID = 'products'
 const REVIEWS_COLLECTION_ID = 'reviews'
 const VARIATIONS_COLLECTION_ID = 'product_variations'
 const IMAGES_COLLECTION_ID = 'product_images'
+
+// Import the updated repository and service
+import {
+  createProductRepository,
+  ProductData,
+  ProductVariation as RepositoryProductVariation,
+  ProductImage as RepositoryProductImage
+} from '@/lib/repositories/ProductRepository'
+import { createProductService } from '@/lib/services/ProductService'
 
 // Enhanced interfaces for better type safety
 interface ProductImage {
@@ -419,12 +429,129 @@ function calculateReviewStats(reviews: ProductReview[]) {
   }
 }
 
+// Helper function to organize images for API response
+function organizeImagesForResponse(images: RepositoryProductImage[]): EnhancedProductResponse['images'] {
+  const organizedImages: EnhancedProductResponse['images'] = {
+    main: [],
+    back: [],
+    gallery: [],
+    variations: {}
+  }
+
+  images.forEach(image => {
+    switch (image.image_type) {
+      case 'main':
+        organizedImages.main.push({
+          $id: image.id,
+          product_id: image.product_id,
+          image_type: image.image_type,
+          variation_type: undefined,
+          variation_value: undefined,
+          file_id: image.image_id,
+          url: image.image_url,
+          alt_text: image.alt_text,
+          sort_order: image.sort_order,
+          image_source: 'device',
+          is_active: image.is_active,
+          $createdAt: new Date().toISOString(),
+          $updatedAt: new Date().toISOString()
+        })
+        break
+      case 'gallery':
+        organizedImages.gallery.push({
+          $id: image.id,
+          product_id: image.product_id,
+          image_type: image.image_type,
+          variation_type: undefined,
+          variation_value: undefined,
+          file_id: image.image_id,
+          url: image.image_url,
+          alt_text: image.alt_text,
+          sort_order: image.sort_order,
+          image_source: 'device',
+          is_active: image.is_active,
+          $createdAt: new Date().toISOString(),
+          $updatedAt: new Date().toISOString()
+        })
+        break
+      case 'variation':
+        if (image.variation_id) {
+          if (!organizedImages.variations[image.variation_id]) {
+            organizedImages.variations[image.variation_id] = []
+          }
+          organizedImages.variations[image.variation_id].push({
+            $id: image.id,
+            product_id: image.product_id,
+            image_type: image.image_type,
+            variation_type: undefined,
+            variation_value: image.variation_id,
+            file_id: image.image_id,
+            url: image.image_url,
+            alt_text: image.alt_text,
+            sort_order: image.sort_order,
+            image_source: 'device',
+            is_active: image.is_active,
+            $createdAt: new Date().toISOString(),
+            $updatedAt: new Date().toISOString()
+          })
+        }
+        break
+    }
+  })
+
+  return organizedImages
+}
+
+// Helper function to organize variations for API response
+function organizeVariationsForResponse(variations: RepositoryProductVariation[]): EnhancedProductResponse['variations'] {
+  const organized: EnhancedProductResponse['variations'] = {
+    colors: [],
+    sizes: [],
+    styles: [],
+    materials: []
+  }
+
+  variations.forEach(variation => {
+    const apiVariation: ProductVariation = {
+      $id: variation.id,
+      product_id: variation.product_id,
+      variation_type: variation.variation_type,
+      variation_value: variation.variation_value,
+      variation_label: variation.variation_label,
+      price_modifier: variation.price_modifier,
+      stock_quantity: variation.stock_quantity,
+      sku_suffix: variation.sku,
+      is_active: variation.is_active,
+      sort_order: variation.sort_order,
+      $createdAt: new Date().toISOString(),
+      $updatedAt: new Date().toISOString()
+    }
+
+    switch (variation.variation_type) {
+      case 'color':
+        organized.colors.push(apiVariation)
+        break
+      case 'size':
+        organized.sizes.push(apiVariation)
+        break
+      case 'style':
+        organized.styles!.push(apiVariation)
+        break
+      case 'material':
+        organized.materials!.push(apiVariation)
+        break
+    }
+  })
+
+  return organized
+}
+
 export async function GET(
   request: NextRequest,
-  { params }: { params: { slug: string } }
+  { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
-    const slug = params.slug
+    const { slug } = await params
 
     if (!slug) {
       return NextResponse.json(
@@ -562,75 +689,66 @@ export async function GET(
       })
     }
 
-    // Production Appwrite implementation
-    const { databases } = await createAdminClient()
+    // Production Appwrite implementation - use updated repository and service
+    const adminClient = await createAdminClient()
 
-    // Fetch main product
-    const productQuery = await databases.listDocuments(
-      DATABASE_ID,
-      PRODUCTS_COLLECTION_ID,
-      [Query.equal('slug', slug), Query.equal('is_active', true)]
-    )
+    // Create browser-compatible clients for the repository and service
+    const client = new Client()
+      .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1')
+      .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || '')
 
-    if (productQuery.documents.length === 0) {
+    const databases = new Databases(client)
+    const storage = new Storage(client)
+
+    // Create repository and service instances
+    const repository = createProductRepository(databases, storage)
+    const productService = createProductService(databases, storage)
+
+    // Fetch product using the updated repository
+    const productResult = await productService.getProductDetails(slug)
+
+    if (productResult.error || !productResult.product) {
       return NextResponse.json(
-        { error: 'Product not found' },
+        { error: productResult.error || 'Product not found' },
         { status: 404 }
       )
     }
 
-    const product = productQuery.documents[0]
+    const product = productResult.product
 
-    // Enhanced data fetching with proper error handling
-    const [imagesResult, variationsResult, reviewsResult] = await Promise.allSettled([
-      fetchProductImages(databases, product.$id),
-      fetchProductVariations(databases, product.$id, product.hasVariations),
-      fetchProductReviews(databases, product.$id)
-    ])
-
-    // Process images with enhanced structure
-    const images = imagesResult.status === 'fulfilled'
-      ? imagesResult.value
-      : await getFallbackImages(product)
-
-    // Process variations with enhanced structure
-    const variations = variationsResult.status === 'fulfilled'
-      ? organizeVariationsByType(variationsResult.value)
-      : getFallbackVariations(product)
-
-    // Process reviews
-    const reviews = reviewsResult.status === 'fulfilled'
-      ? reviewsResult.value
-      : []
-
-    // Calculate enhanced availability info
-    const availability = calculateAvailabilityInfo(product, variations)
+    // Fetch reviews using existing method
+    const reviews = await fetchProductReviews(databases, product.id)
 
     // Calculate review statistics
     const reviewStats = calculateReviewStats(reviews)
 
-    // Build enhanced product response
+    // Build enhanced product response using the new structure
     const enhancedProduct: EnhancedProductResponse = {
-      $id: product.$id,
+      $id: product.id,
       name: product.name,
       slug: product.slug,
-      brand_id: product.brand_id,
-      category_id: product.category_id,
-      price: product.price || 0,
-      discount_price: product.discount_price || 0,
-      description: product.description || '',
-      is_active: product.is_active !== false,
-      hasVariations: product.hasVariations || false,
-      min_order_quantity: product.min_order_quantity || 1,
-      stock_quantity: product.stockQuantity || product.stock_quantity || 0,
-      low_stock_threshold: product.lowStockThreshold || 5,
-      images,
-      variations,
-      availability,
+      brand_id: product.brand_id || '',
+      category_id: product.category_id || '',
+      price: product.price,
+      discount_price: product.discount_price,
+      description: product.description,
+      is_active: product.is_active,
+      hasVariations: product.hasVariations,
+      min_order_quantity: product.min_order_quantity,
+      stock_quantity: product.stockQuantity,
+      low_stock_threshold: 5,
+      images: organizeImagesForResponse(product.images),
+      variations: organizeVariationsForResponse(product.variations),
+      availability: {
+        is_available: product.stockQuantity > 0,
+        stock_quantity: product.stockQuantity,
+        min_order_quantity: product.min_order_quantity,
+        max_order_quantity: product.stockQuantity
+      },
       reviews,
       reviewStats,
-      $createdAt: product.$createdAt,
-      $updatedAt: product.$updatedAt
+      $createdAt: product.created_at,
+      $updatedAt: product.updated_at
     }
 
     return NextResponse.json({

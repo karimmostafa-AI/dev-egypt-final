@@ -16,9 +16,10 @@ import { Separator } from '@/components/ui/separator';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { ArrowLeft, CreditCard, Truck, Shield, CheckCircle } from 'lucide-react';
+import { ArrowLeft, CreditCard, Truck, Shield, CheckCircle, User, UserCheck } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
+import AddressForm from '../../components/AddressForm';
 
 // Form validation schema
 const checkoutSchema = z.object({
@@ -49,9 +50,7 @@ const checkoutSchema = z.object({
   }),
 
   // Payment
-  paymentMethod: z.enum(['credit_card', 'paypal', 'apple_pay'], {
-    required_error: 'Please select a payment method',
-  }),
+  paymentMethod: z.literal('cash_on_delivery'),
 
   // Options
   sameAsBilling: z.boolean().default(false),
@@ -69,6 +68,7 @@ export default function CheckoutPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderComplete, setOrderComplete] = useState(false);
   const [orderId, setOrderId] = useState<string>('');
+  const [isGuestCheckout, setIsGuestCheckout] = useState(true);
 
   // Helper function to determine if media_id is a URL or file ID
   const getImageSrc = (mediaId: string) => {
@@ -103,7 +103,7 @@ export default function CheckoutPage() {
         postalCode: '',
         country: 'United States',
       },
-      paymentMethod: 'credit_card',
+      paymentMethod: 'cash_on_delivery',
       sameAsBilling: false,
       customerNote: '',
       acceptTerms: false,
@@ -170,6 +170,7 @@ export default function CheckoutPage() {
             },
         customerNote: data.customerNote,
         paymentMethod: data.paymentMethod,
+        paymentStatus: 'pending', // Cash on delivery orders start as pending
         shippingCost: shipping,
         taxAmount: tax,
         discountAmount: 0,
@@ -213,7 +214,7 @@ export default function CheckoutPage() {
                 <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-6" />
                 <h1 className="text-3xl font-bold text-gray-900 mb-4">Order Confirmed!</h1>
                 <p className="text-gray-600 mb-6">
-                  Thank you for your order. We've received your order and will process it shortly.
+                  Thank you for your order. We've received your order and will process it shortly. You'll pay with cash when your order is delivered.
                 </p>
                 <div className="bg-gray-50 rounded-lg p-4 mb-6">
                   <p className="text-sm text-gray-600">Order Number</p>
@@ -256,6 +257,56 @@ export default function CheckoutPage() {
               Back to Cart
             </Link>
             <h1 className="text-3xl font-bold text-gray-900">Checkout</h1>
+
+            {/* Guest vs Account Toggle */}
+            <div className="mt-6 bg-white rounded-lg border p-4 max-w-md">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-full ${isGuestCheckout ? 'bg-[#173a6a] text-white' : 'bg-gray-100 text-gray-600'}`}>
+                    <User className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-gray-900">Guest Checkout</p>
+                    <p className="text-sm text-gray-600">Quick and easy - no account needed</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsGuestCheckout(!isGuestCheckout)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    isGuestCheckout ? 'bg-[#173a6a]' : 'bg-gray-200'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      isGuestCheckout ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-full ${!isGuestCheckout ? 'bg-[#173a6a] text-white' : 'bg-gray-100 text-gray-600'}`}>
+                    <UserCheck className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-gray-900">Account</p>
+                    <p className="text-sm text-gray-600">Sign in for faster checkout</p>
+                  </div>
+                </div>
+              </div>
+
+              {!isGuestCheckout && (
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <button className="w-full bg-gray-100 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors">
+                    Sign In to Your Account
+                  </button>
+                  <p className="text-xs text-gray-600 text-center mt-2">
+                    New customer?{' '}
+                    <Link href="/register" className="text-[#173a6a] hover:underline">
+                      Create an account
+                    </Link>
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
 
           <Form {...form}>
@@ -271,6 +322,24 @@ export default function CheckoutPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
+                    {isGuestCheckout && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                        <div className="flex items-start gap-3">
+                          <div className="w-5 h-5 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                            <span className="text-blue-600 text-xs">ℹ</span>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-blue-900 mb-1">
+                              Guest Checkout
+                            </p>
+                            <p className="text-sm text-blue-700">
+                              You're checking out as a guest. No account needed! We'll send order updates to your email.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     <FormField
                       control={form.control}
                       name="email"
@@ -280,6 +349,9 @@ export default function CheckoutPage() {
                           <FormControl>
                             <Input placeholder="your@email.com" {...field} />
                           </FormControl>
+                          <p className="text-xs text-gray-600 mt-1">
+                            We'll send order confirmation and updates to this email
+                          </p>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -321,6 +393,9 @@ export default function CheckoutPage() {
                           <FormControl>
                             <Input placeholder="(555) 123-4567" {...field} />
                           </FormControl>
+                          <p className="text-xs text-gray-600 mt-1">
+                            For delivery updates and support
+                          </p>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -337,86 +412,11 @@ export default function CheckoutPage() {
                       Shipping Address
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    <FormField
-                      control={form.control}
-                      name="shippingAddress.addressLine1"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Address Line 1</FormLabel>
-                          <FormControl>
-                            <Input placeholder="123 Main Street" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="shippingAddress.addressLine2"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Address Line 2 (Optional)</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Apartment, suite, etc." {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <FormField
-                        control={form.control}
-                        name="shippingAddress.city"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>City</FormLabel>
-                            <FormControl>
-                              <Input placeholder="New York" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="shippingAddress.state"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>State</FormLabel>
-                            <FormControl>
-                              <Input placeholder="NY" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="shippingAddress.postalCode"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>ZIP Code</FormLabel>
-                            <FormControl>
-                              <Input placeholder="10001" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                    <FormField
-                      control={form.control}
-                      name="shippingAddress.country"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Country</FormLabel>
-                          <FormControl>
-                            <Input {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
+                  <CardContent>
+                    <AddressForm
+                      form={form}
+                      addressType="shipping"
+                      className="space-y-4"
                     />
                   </CardContent>
                 </Card>
@@ -429,111 +429,15 @@ export default function CheckoutPage() {
                       Billing Address
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    <FormField
-                      control={form.control}
-                      name="sameAsBilling"
-                      render={({ field }) => (
-                        <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                          <FormControl>
-                            <Checkbox
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                            />
-                          </FormControl>
-                          <div className="space-y-1 leading-none">
-                            <FormLabel>
-                              Same as shipping address
-                            </FormLabel>
-                          </div>
-                        </FormItem>
-                      )}
+                  <CardContent>
+                    <AddressForm
+                      form={form}
+                      addressType="billing"
+                      sameAsShipping={watchSameAsBilling}
+                      onSameAsShippingChange={(checked) => form.setValue('sameAsBilling', checked)}
+                      showSameAsShipping={true}
+                      className="space-y-4"
                     />
-
-                    {!watchSameAsBilling && (
-                      <>
-                        <FormField
-                          control={form.control}
-                          name="billingAddress.addressLine1"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Address Line 1</FormLabel>
-                              <FormControl>
-                                <Input placeholder="123 Main Street" {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="billingAddress.addressLine2"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Address Line 2 (Optional)</FormLabel>
-                              <FormControl>
-                                <Input placeholder="Apartment, suite, etc." {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          <FormField
-                            control={form.control}
-                            name="billingAddress.city"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>City</FormLabel>
-                                <FormControl>
-                                  <Input placeholder="New York" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
-                            name="billingAddress.state"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>State</FormLabel>
-                                <FormControl>
-                                  <Input placeholder="NY" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
-                            name="billingAddress.postalCode"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>ZIP Code</FormLabel>
-                                <FormControl>
-                                  <Input placeholder="10001" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </div>
-                        <FormField
-                          control={form.control}
-                          name="billingAddress.country"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Country</FormLabel>
-                              <FormControl>
-                                <Input {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </>
-                    )}
                   </CardContent>
                 </Card>
 
@@ -542,53 +446,24 @@ export default function CheckoutPage() {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <span className="bg-[#173a6a] text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">4</span>
-                      <CreditCard className="h-5 w-5" />
+                      <Truck className="h-5 w-5" />
                       Payment Method
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <FormField
-                      control={form.control}
-                      name="paymentMethod"
-                      render={({ field }) => (
-                        <FormItem className="space-y-3">
-                          <FormControl>
-                            <RadioGroup
-                              onValueChange={field.onChange}
-                              defaultValue={field.value}
-                              className="grid grid-cols-1 gap-4"
-                            >
-                              <div className="flex items-center space-x-2 border rounded-lg p-4">
-                                <RadioGroupItem value="credit_card" id="credit_card" />
-                                <Label htmlFor="credit_card" className="flex-1 cursor-pointer">
-                                  <div className="flex items-center justify-between">
-                                    <span>Credit Card</span>
-                                    <div className="flex gap-2">
-                                      <span className="text-xs bg-gray-100 px-2 py-1 rounded">Visa</span>
-                                      <span className="text-xs bg-gray-100 px-2 py-1 rounded">MC</span>
-                                      <span className="text-xs bg-gray-100 px-2 py-1 rounded">Amex</span>
-                                    </div>
-                                  </div>
-                                </Label>
-                              </div>
-                              <div className="flex items-center space-x-2 border rounded-lg p-4">
-                                <RadioGroupItem value="paypal" id="paypal" />
-                                <Label htmlFor="paypal" className="flex-1 cursor-pointer">
-                                  PayPal
-                                </Label>
-                              </div>
-                              <div className="flex items-center space-x-2 border rounded-lg p-4">
-                                <RadioGroupItem value="apple_pay" id="apple_pay" />
-                                <Label htmlFor="apple_pay" className="flex-1 cursor-pointer">
-                                  Apple Pay
-                                </Label>
-                              </div>
-                            </RadioGroup>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                          <span className="text-green-600 text-lg">💵</span>
+                        </div>
+                        <div>
+                          <p className="font-medium text-green-900">Cash on Delivery</p>
+                          <p className="text-sm text-green-700">
+                            Pay with cash when your order is delivered to your doorstep
+                          </p>
+                        </div>
+                      </div>
+                    </div>
                   </CardContent>
                 </Card>
 

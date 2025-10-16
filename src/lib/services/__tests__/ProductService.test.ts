@@ -163,20 +163,26 @@ describe('ProductService', () => {
           id: 'main-1',
           product_id: 'test-id',
           image_type: 'main' as const,
+          image_url: '/main.jpg',
+          image_id: 'main-file',
           file_id: 'main-file',
           url: '/main.jpg',
           alt_text: 'Main image',
           sort_order: 1,
+          is_primary: true,
           is_active: true
         },
         {
           id: 'gallery-1',
           product_id: 'test-id',
           image_type: 'gallery' as const,
+          image_url: '/gallery.jpg',
+          image_id: 'gallery-file',
           file_id: 'gallery-file',
           url: '/gallery.jpg',
           alt_text: 'Gallery image',
           sort_order: 2,
+          is_primary: false,
           is_active: true
         }
       ]

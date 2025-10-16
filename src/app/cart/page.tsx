@@ -7,11 +7,13 @@ import MainLayout from '../../components/MainLayout';
 import { useCart } from '../../context/CartContext';
 import { Trash2, Plus, Minus, ShoppingBag, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
+import CouponInput from '../../components/CouponInput';
 
 export default function CartPage() {
   const router = useRouter();
   const { cart, removeFromCart, updateQuantity, getCartTotal, clearCart, getCartCount } = useCart();
   const [isClearing, setIsClearing] = useState(false);
+  const [appliedDiscount, setAppliedDiscount] = useState<{ code: string; amount: number; type: 'percentage' | 'fixed' } | null>(null);
 
   // Helper function to determine if media_id is a URL or file ID
   const getImageSrc = (mediaId: string) => {
@@ -37,8 +39,14 @@ export default function CartPage() {
 
   const subtotal = getCartTotal();
   const shipping = cart.length > 0 ? 10 : 0; // $10 flat rate shipping
-  const tax = subtotal * 0.08; // 8% tax
-  const total = subtotal + shipping + tax;
+  const discountAmount = appliedDiscount
+    ? appliedDiscount.type === 'percentage'
+      ? subtotal * (appliedDiscount.amount / 100)
+      : appliedDiscount.amount
+    : 0;
+  const discountedSubtotal = Math.max(0, subtotal - discountAmount);
+  const tax = discountedSubtotal * 0.08; // 8% tax
+  const total = discountedSubtotal + shipping + tax;
 
   if (cart.length === 0) {
     return (
@@ -218,11 +226,39 @@ export default function CartPage() {
               <div className="bg-white rounded-lg shadow-sm p-6 sticky top-8">
                 <h2 className="text-xl font-semibold text-gray-900 mb-6">Order Summary</h2>
 
+                {/* Coupon Section */}
+                <div className="mb-6">
+                  <CouponInput
+                    onCouponApplied={(code, discount) => {
+                      setAppliedDiscount({ code, amount: discount, type: 'percentage' });
+                    }}
+                    onCouponRemoved={() => {
+                      setAppliedDiscount(null);
+                    }}
+                    appliedCoupon={appliedDiscount ? {
+                      code: appliedDiscount.code,
+                      discount: appliedDiscount.amount,
+                      type: appliedDiscount.type
+                    } : null}
+                  />
+                </div>
+
                 <div className="space-y-4 mb-6">
                   <div className="flex justify-between text-gray-600">
                     <span>Subtotal ({getCartCount()} items)</span>
                     <span className="font-medium">${subtotal.toFixed(2)}</span>
                   </div>
+
+                  {appliedDiscount && discountAmount > 0 && (
+                    <div className="flex justify-between text-green-600">
+                      <span>Discount ({appliedDiscount.code})</span>
+                      <span className="font-medium">
+                        -${discountAmount.toFixed(2)}
+                        {appliedDiscount.type === 'percentage' && ` (${appliedDiscount.amount}%)`}
+                      </span>
+                    </div>
+                  )}
+
                   <div className="flex justify-between text-gray-600">
                     <span>Shipping</span>
                     <span className="font-medium">${shipping.toFixed(2)}</span>
@@ -236,6 +272,11 @@ export default function CartPage() {
                       <span>Total</span>
                       <span>${total.toFixed(2)}</span>
                     </div>
+                    {appliedDiscount && (
+                      <p className="text-sm text-gray-600 mt-1">
+                        You saved ${discountAmount.toFixed(2)} with code {appliedDiscount.code}
+                      </p>
+                    )}
                   </div>
                 </div>
 

@@ -2,7 +2,8 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { Globe, ChevronDown, MapPin, RefreshCw } from 'lucide-react';
-import { useLocation, LocationData } from '../contexts/LocationContext';
+import { useLocation } from '../contexts/LocationContext';
+import { LocationData } from '../hooks/useLocationDetection';
 
 interface CountryOption {
   name: string;

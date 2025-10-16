@@ -3,6 +3,7 @@ import { withAuth } from '@/lib/auth-middleware';
 import { databases, DATABASE_ID, ORDERS_COLLECTION_ID, createServerClient } from '@/lib/appwrite';
 import { ID } from 'appwrite';
 import { Databases } from 'node-appwrite';
+import { emailService } from '../../../lib/email-service';
 
 // GET /api/orders - Get user's orders
 export const GET = withAuth(async (request: NextRequest, user) => {
@@ -134,6 +135,40 @@ export const POST = async (request: NextRequest) => {
     );
 
     console.log('Order created successfully:', order.$id);
+
+    // Send order confirmation email
+    try {
+      // For guest users, we need customer email from the request
+      // For authenticated users, we would fetch it from the user data
+      const customerEmail = customerId && customerId !== 'guest'
+        ? 'customer@example.com' // In real implementation, fetch from user data
+        : 'guest@example.com'; // In real implementation, get from request or form data
+
+      const customerName = shippingAddress.fullName || 'Valued Customer';
+
+      await emailService.sendOrderConfirmation({
+        orderNumber,
+        customerName,
+        customerEmail,
+        items: orderData.items.map(item => ({
+          name: item.productName,
+          quantity: item.quantity,
+          price: item.price,
+          total: item.total
+        })),
+        subtotal,
+        shipping: shippingCost,
+        tax: taxAmount,
+        total,
+        shippingAddress,
+        estimatedDelivery: '3-5 business days'
+      });
+
+      console.log('Order confirmation email sent successfully');
+    } catch (emailError) {
+      console.error('Failed to send order confirmation email:', emailError);
+      // Don't fail the order if email fails
+    }
 
     return NextResponse.json({
       success: true,

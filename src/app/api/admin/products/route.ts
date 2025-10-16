@@ -306,7 +306,23 @@ export async function GET_PRODUCT_DETAILS(slug: string) {
 
 export async function POST(request: NextRequest) {
   try {
-    const productData = await request.json()
+    let productData
+    try {
+      const rawBody = await request.text()
+      if (!rawBody.trim()) {
+        return NextResponse.json(
+          { error: "Request body is empty" },
+          { status: 400 }
+        )
+      }
+      productData = JSON.parse(rawBody)
+    } catch (parseError: any) {
+      console.error("JSON parsing error:", parseError)
+      return NextResponse.json(
+        { error: "Invalid JSON in request body", details: parseError.message },
+        { status: 400 }
+      )
+    }
 
     // Create admin client
     const { databases } = await createAdminClient()
@@ -322,99 +338,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Parse colors, sizes, and auto-generated variations
-    let colors = []
-    let sizes = []
-    let variations = []
-    let hasVariations = false
+    // Determine if product has variations based on input data
+    const hasVariations = !!(productData.selectedColors || productData.selectedSizes || productData.generatedVariations || productData.variations)
 
-    try {
-      // Parse selected colors from the ColorSelector component
-      if (productData.selectedColors) {
-        colors = typeof productData.selectedColors === 'string'
-          ? JSON.parse(productData.selectedColors)
-          : productData.selectedColors
-      }
-
-      // Parse selected sizes from the SizeSelector component
-      if (productData.selectedSizes) {
-        sizes = typeof productData.selectedSizes === 'string'
-          ? JSON.parse(productData.selectedSizes)
-          : productData.selectedSizes
-      }
-
-      // Parse generated variations from the variation-generator utility
-      if (productData.generatedVariations) {
-        variations = typeof productData.generatedVariations === 'string'
-          ? JSON.parse(productData.generatedVariations)
-          : productData.generatedVariations
-      } else if (productData.variations) {
-        // Fallback to legacy variations format
-        variations = typeof productData.variations === 'string'
-          ? JSON.parse(productData.variations)
-          : productData.variations
-      }
-
-      // Determine if product has variations
-      hasVariations = (Array.isArray(variations) && variations.length > 0) ||
-                     (Array.isArray(colors) && colors.length > 0) ||
-                     (Array.isArray(sizes) && sizes.length > 0)
-
-      console.log('Parsed variation data:', {
-        colors: colors.length,
-        sizes: sizes.length,
-        variations: variations.length,
-        hasVariations
-      })
-
-    } catch (error) {
-      console.warn('Error parsing variation data:', error)
-      hasVariations = false
-      colors = []
-      sizes = []
-      variations = []
-    }
-
-    // Create compact variation summary (to fit in 1000 char limit)
-    const compactVariationSummary = {
-      count: variations.length,
-      colorIds: colors.map(c => c.id),
-      sizeIds: sizes.map(s => s.id)
-    }
-    const variationString = JSON.stringify(compactVariationSummary)
-    
-    // Log warning if variations string is too long
-    if (variationString.length > 1000) {
-      console.warn(`⚠️ Variations string too long (${variationString.length} chars). Storing summary only.`)
-    }
-
-    // Prepare compact color options (only essential fields)
-    const compactColors = colors.map(c => ({
-      i: c.id,
-      n: c.name,
-      h: c.hexCode,
-      f: c.frontImageUrl,
-      b: c.backImageUrl
-    }))
-
-    // Prepare compact size options (only essential fields)
-    const compactSizes = sizes.map(s => ({
-      i: s.id,
-      n: s.name,
-      s: s.stock,
-      p: s.priceModifier
-    }))
-
-    const colorOptionsString = JSON.stringify(compactColors)
-    const sizeOptionsString = JSON.stringify(compactSizes)
-
-    console.log('Storage size check:', {
-      variations: variationString.length,
-      colorOptions: colorOptionsString.length,
-      sizeOptions: sizeOptionsString.length
-    })
-
-    // Set default values
+    // Set default values - only include fields that exist in current schema
     const productToCreate = {
       name: productData.name,
       slug: productData.slug,
@@ -429,31 +356,10 @@ export async function POST(request: NextRequest) {
       is_new: productData.is_new !== undefined ? productData.is_new : false,
       is_featured: productData.is_featured !== undefined ? productData.is_featured : false,
       hasVariations: hasVariations,
-      // Store compact variation summary (fits in 1000 chars)
-      variations: variationString.length <= 1000 ? variationString : '{}',
-      // Store compact color and size options
-      colorOptions: colorOptionsString.length <= 1000 ? colorOptionsString : '[]',
-      sizeOptions: sizeOptionsString.length <= 1000 ? sizeOptionsString : '[]',
-      // Image data
-      mainImageId: productData.mainImageId || '',
-      backImageId: productData.backImageId || '',
-      mainImageUrl: productData.mainImageUrl || '',
-      backImageUrl: productData.backImageUrl || '',
-      galleryImages: productData.galleryImages || '[]',
-      imageVariations: productData.imageVariations || '[]',
-      // Pricing and inventory
-      compareAtPrice: productData.compareAtPrice || null,
-      costPerItem: productData.costPerItem || null,
-      sku: productData.sku || '',
-      stockQuantity: productData.stockQuantity || 0,
-      lowStockThreshold: productData.lowStockThreshold || 5,
-      // Metadata
-      tags: productData.tags || [],
-      status: productData.status || 'active',
-      featuredImageId: productData.featuredImageId || null,
-      viewCount: productData.viewCount || 0,
-      salesCount: productData.salesCount || 0,
-      lastViewedAt: productData.lastViewedAt || null
+      // Meta fields
+      meta_title: productData.meta_title || '',
+      meta_description: productData.meta_description || '',
+      meta_keywords: productData.meta_keywords || ''
     }
 
     // Create the product
@@ -479,7 +385,24 @@ export async function PATCH(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const productId = searchParams.get("productId")
-    const updateData = await request.json()
+
+    let updateData
+    try {
+      const rawBody = await request.text()
+      if (!rawBody.trim()) {
+        return NextResponse.json(
+          { error: "Request body is empty" },
+          { status: 400 }
+        )
+      }
+      updateData = JSON.parse(rawBody)
+    } catch (parseError: any) {
+      console.error("JSON parsing error:", parseError)
+      return NextResponse.json(
+        { error: "Invalid JSON in request body", details: parseError.message },
+        { status: 400 }
+      )
+    }
 
     if (!productId) {
       return NextResponse.json(
@@ -492,7 +415,7 @@ export async function PATCH(request: NextRequest) {
     const { databases } = await createAdminClient()
 
     // Prepare update data (only include fields that are provided)
-    const allowedFields = ['name', 'slug', 'brand_id', 'category_id', 'units', 'price', 'discount_price', 'min_order_quantity', 'description', 'is_active', 'is_new', 'is_featured', 'mainImageId', 'mainImageUrl', 'backImageId', 'backImageUrl']
+    const allowedFields = ['name', 'slug', 'brand_id', 'category_id', 'units', 'price', 'discount_price', 'min_order_quantity', 'description', 'is_active', 'is_new', 'is_featured', 'hasVariations', 'meta_title', 'meta_description', 'meta_keywords']
     const filteredUpdateData: any = {}
 
     allowedFields.forEach(field => {

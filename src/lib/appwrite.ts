@@ -9,20 +9,34 @@ const projectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || '';
 const client = new Client();
 
 // Configure client for both browser and server environments
+console.log('🔧 Configuring Appwrite client...');
+console.log('Environment variables:', {
+  NEXT_PUBLIC_APPWRITE_ENDPOINT: process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT,
+  NEXT_PUBLIC_APPWRITE_PROJECT_ID: process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID,
+  endpoint,
+  projectId
+});
+
 if (endpoint && projectId && endpoint !== 'disabled' && projectId !== 'disabled' && endpoint !== '' && projectId !== '') {
   try {
     client
       .setEndpoint(endpoint)
       .setProject(projectId);
-    
-    console.log('Appwrite client configured:');
-    console.log('Endpoint:', endpoint);
-    console.log('Project ID:', projectId);
+
+    console.log('✅ Appwrite client configured successfully:');
+    console.log('  Endpoint:', endpoint);
+    console.log('  Project ID:', projectId);
   } catch (error) {
-    console.warn('Failed to configure Appwrite client:', error);
+    console.error('❌ Failed to configure Appwrite client:', error);
   }
 } else {
-  console.warn('Appwrite configuration disabled or missing. Running in fallback mode.');
+  console.warn('⚠️ Appwrite configuration disabled or missing. Running in fallback mode.');
+  console.warn('Missing configuration:', {
+    endpoint: !endpoint || endpoint === '',
+    projectId: !projectId || projectId === '',
+    endpointValue: endpoint,
+    projectIdValue: projectId
+  });
 }
 
 // Browser-specific configuration

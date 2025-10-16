@@ -155,7 +155,7 @@ async function tryExchangeRateAPI(from: string, to: string, amount: number) {
       throw error;
     }
     
-    if (error.name === 'AbortError') {
+    if (error instanceof Error && error.name === 'AbortError') {
       const timeoutError = new CurrencyError(
         'ExchangeRate API request timed out',
         ErrorType.TIMEOUT,
@@ -172,7 +172,7 @@ async function tryExchangeRateAPI(from: string, to: string, amount: number) {
       503,
       true
     );
-    logCurrencyError(networkError.message, error);
+    logCurrencyError(networkError.message, error instanceof Error ? error.message : error);
     throw networkError;
   }
 }
@@ -230,7 +230,7 @@ async function tryMoneyMorphAPI(from: string, to: string, amount: number) {
       throw error;
     }
     
-    if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+    if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
       const timeoutError = new CurrencyError(
         'MoneyMorph API request timed out',
         ErrorType.TIMEOUT,
@@ -247,7 +247,7 @@ async function tryMoneyMorphAPI(from: string, to: string, amount: number) {
       503,
       true
     );
-    logCurrencyError(networkError.message, error);
+    logCurrencyError(networkError.message, error instanceof Error ? error.message : error);
     throw networkError;
   }
 }

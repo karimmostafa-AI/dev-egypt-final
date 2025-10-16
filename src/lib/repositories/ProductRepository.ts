@@ -1,16 +1,24 @@
 import { Databases, Storage, Query } from 'appwrite';
 import { DATABASE_ID, PRODUCTS_COLLECTION_ID } from '@/lib/appwrite';
 
+// New collection IDs for the updated schema
+const PRODUCT_VARIATIONS_COLLECTION_ID = 'product_variations';
+const PRODUCT_IMAGES_COLLECTION_ID = 'product_images';
+
 // Domain models (clean data structures)
 export interface ProductImage {
   id: string;
   product_id: string;
+  variation_id?: string;
   image_type: 'main' | 'variation' | 'gallery';
-  variation_value?: string;
-  file_id: string;
-  url: string;
+  image_url: string;
+  image_id: string;
+  // Additional properties for backward compatibility with ImageService
+  url?: string; // Alias for image_url
+  file_id?: string; // Alias for image_id
   alt_text: string;
   sort_order: number;
+  is_primary: boolean;
   is_active: boolean;
 }
 
@@ -73,6 +81,7 @@ export class ProductRepository implements IProductRepository {
 
   async findBySlug(slug: string): Promise<ProductData | null> {
     try {
+      // Fetch the main product
       const response = await this.databases.listDocuments(
         DATABASE_ID,
         PRODUCTS_COLLECTION_ID,
@@ -87,7 +96,15 @@ export class ProductRepository implements IProductRepository {
         return null;
       }
 
-      return this.transformDocument(response.documents[0]);
+      const productDocument = response.documents[0];
+
+      // Fetch variations for this product
+      const variations = await this.fetchProductVariations(productDocument.$id);
+
+      // Fetch images for this product
+      const images = await this.fetchProductImages(productDocument.$id);
+
+      return this.transformDocument(productDocument, variations, images);
     } catch (error) {
       console.error('Error fetching product by slug:', error);
       throw new Error(`Failed to fetch product: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -102,10 +119,78 @@ export class ProductRepository implements IProductRepository {
         id
       );
 
-      return this.transformDocument(document);
+      // Fetch variations and images for this product
+      const variations = await this.fetchProductVariations(document.$id);
+      const images = await this.fetchProductImages(document.$id);
+
+      return this.transformDocument(document, variations, images);
     } catch (error) {
       console.error('Error fetching product by ID:', error);
       throw new Error(`Failed to fetch product: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async fetchProductVariations(productId: string): Promise<ProductVariation[]> {
+    try {
+      const response = await this.databases.listDocuments(
+        DATABASE_ID,
+        PRODUCT_VARIATIONS_COLLECTION_ID,
+        [
+          Query.equal('product_id', productId),
+          Query.equal('is_active', true),
+          Query.orderAsc('sort_order')
+        ]
+      );
+
+      return response.documents.map(doc => ({
+        id: doc.$id,
+        product_id: doc.product_id,
+        variation_type: doc.variation_type,
+        variation_value: doc.variation_value,
+        variation_label: doc.variation_label,
+        stock_quantity: doc.stock_quantity,
+        price_modifier: doc.price_modifier,
+        sku: doc.sku,
+        image_id: doc.image_id,
+        is_active: doc.is_active,
+        sort_order: doc.sort_order
+      }));
+    } catch (error) {
+      console.warn('Error fetching product variations:', error);
+      return [];
+    }
+  }
+
+  private async fetchProductImages(productId: string): Promise<ProductImage[]> {
+    try {
+      const response = await this.databases.listDocuments(
+        DATABASE_ID,
+        PRODUCT_IMAGES_COLLECTION_ID,
+        [
+          Query.equal('product_id', productId),
+          Query.equal('is_active', true),
+          Query.orderAsc('sort_order')
+        ]
+      );
+
+      return response.documents.map(doc => ({
+        id: doc.$id,
+        product_id: doc.product_id,
+        image_type: doc.image_type,
+        variation_id: doc.variation_id,
+        image_url: doc.image_url,
+        image_id: doc.image_id,
+        // Set backward compatibility properties
+        url: doc.image_url,
+        file_id: doc.image_id,
+        alt_text: doc.alt_text,
+        sort_order: doc.sort_order,
+        is_primary: doc.is_primary,
+        is_active: doc.is_active
+      }));
+    } catch (error) {
+      console.warn('Error fetching product images:', error);
+      return [];
     }
   }
 
@@ -145,7 +230,13 @@ export class ProductRepository implements IProductRepository {
         queries
       );
 
-      const products = response.documents.map(doc => this.transformDocument(doc));
+      const products = await Promise.all(
+        response.documents.map(async (doc) => {
+          const variations = await this.fetchProductVariations(doc.$id);
+          const images = await this.fetchProductImages(doc.$id);
+          return this.transformDocument(doc, variations, images);
+        })
+      );
 
       return {
         products,
@@ -175,17 +266,32 @@ export class ProductRepository implements IProductRepository {
         queries
       );
 
-      return response.documents.map(doc => this.transformDocument(doc));
+      return await Promise.all(
+        response.documents.map(async (doc) => {
+          const variations = await this.fetchProductVariations(doc.$id);
+          const images = await this.fetchProductImages(doc.$id);
+          return this.transformDocument(doc, variations, images);
+        })
+      );
     } catch (error) {
       console.error('Error searching products:', error);
       throw new Error(`Failed to search products: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
-  private transformDocument(document: any): ProductData {
+  private transformDocument(document: any, fetchedVariations: ProductVariation[] = [], fetchedImages: ProductImage[] = []): ProductData {
     // Parse JSON fields
     let variations: ProductVariation[] = [];
     let images: ProductImage[] = [];
+
+    // Use fetched data if provided, otherwise parse from document
+    if (fetchedVariations.length > 0) {
+      variations = fetchedVariations;
+    }
+
+    if (fetchedImages.length > 0) {
+      images = fetchedImages;
+    }
 
     // Handle variations - check multiple possible field names
     try {
@@ -361,11 +467,14 @@ export class ProductRepository implements IProductRepository {
             id: `img_${imageIndex}`,
             product_id: document.$id,
             image_type: 'main',
-            variation_value: 'Default',
-            file_id: document.mainImageId || `main_${document.$id}`,
+            image_url: mainImageUrl,
+            image_id: document.mainImageId || `main_${document.$id}`,
+            // Set backward compatibility properties
             url: mainImageUrl,
+            file_id: document.mainImageId || `main_${document.$id}`,
             alt_text: `${document.name} - Main Image`,
             sort_order: 0,
+            is_primary: true,
             is_active: true
           });
         }
@@ -379,11 +488,14 @@ export class ProductRepository implements IProductRepository {
             id: `img_${imageIndex + 1}`,
             product_id: document.$id,
             image_type: 'gallery',
-            variation_value: 'Default',
-            file_id: document.backImageId || `back_${document.$id}`,
+            image_url: backImageUrl,
+            image_id: document.backImageId || `back_${document.$id}`,
+            // Set backward compatibility properties
             url: backImageUrl,
+            file_id: document.backImageId || `back_${document.$id}`,
             alt_text: `${document.name} - Back Image`,
             sort_order: 1,
+            is_primary: false,
             is_active: true
           });
         }

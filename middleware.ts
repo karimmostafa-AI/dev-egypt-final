@@ -22,7 +22,7 @@ export function middleware(request: NextRequest) {
       hasAdminSession: !!adminSession,
       hasAuthHeader: !!authHeader,
       userAgent: request.headers.get("user-agent"),
-      ip: request.ip || request.headers.get("x-forwarded-for")
+      ip: request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown"
     })
   }
 
