@@ -2,113 +2,77 @@
 
 This file provides guidance to WARP (warp.dev) when working with code in this repository.
 
-Project overview
-- Full-stack e-commerce backend/UI built with Next.js 15 (App Router), TypeScript, Tailwind, and Appwrite. Vitest + Testing Library for tests. Docker Compose provided for local Appwrite infra and Nginx proxy.
+Project: Next.js 15 (App Router) + TypeScript e-commerce app with Appwrite backend services, Tailwind CSS, Vitest testing.
 
-Core commands
-- Install dependencies
-  ```bash path=null start=null
-  npm install
-  ```
-- Development server (Turbopack)
-  ```bash path=null start=null
-  npm run dev
-  ```
-- Build and start (production)
-  ```bash path=null start=null
-  npm run build
-  npm start
-  ```
-- Lint
-  ```bash path=null start=null
-  npm run lint
-  ```
+Commands
+- Install deps: npm install
+- Dev server (Turbopack): npm run dev
+- Build: npm run build
+- Start (prod): npm start
+- Lint: npm run lint
+- Tests (Vitest):
+  - All tests (watch): npm run test
+  - All tests (CI): npm run test:run
+  - With coverage: npm run test:coverage
+  - Unit: npm run test:unit
+  - Integration: npm run test:integration
+  - E2E: npm run test:e2e
+  - Visual: npm run test:visual
+  - Performance: npm run test:performance
+  - Accessibility: npm run test:accessibility
+  - Comprehensive runner: npm run test:suite all
+  - Smoke/regression: npm run test:smoke / npm run test:regression
+  - Watch mode: npm run test:watch
+  - Run a single test file: npx vitest run path/to/test.test.tsx
+  - Run a single test by name: npx vitest run --testNamePattern="<substring>"
 
-Testing (Vitest)
-- Run all tests / watch / coverage
-  ```bash path=null start=null
-  npm run test
-  npm run test:watch
-  npm run test:coverage
-  ```
-- Run a single test file
-  ```bash path=null start=null
-  # example (adjust path as needed)
-  npm run test:run -- src/test/integration/user-workflows.test.tsx
-  # or
-  npx vitest run src/test/integration/user-workflows.test.tsx
-  ```
-- Run tests matching a name pattern
-  ```bash path=null start=null
-  npx vitest run --testNamePattern="should handle cart workflow"
-  ```
-- Category suites
-  ```bash path=null start=null
-  npm run test:unit
-  npm run test:integration
-  npm run test:e2e
-  npm run test:visual
-  npm run test:performance
-  npm run test:accessibility
-  ```
-- Custom suite runner
-  ```bash path=null start=null
-  npm run test:suite all
-  npm run test:smoke
-  npm run test:regression
-  ```
-- Coverage report location
-  ```bash path=null start=null
-  ./coverage/index.html
-  ```
+Key configuration
+- TypeScript paths: "@/*" -> "src/*" (see tsconfig.json)
+- Vitest: jsdom env, setup at src/test/setup.ts, coverage thresholds at vitest.config.ts
+- ESLint: Flat config (eslint.config.mjs)
+- Next config: next.config.ts (images, performance flags)
 
-Environment and services
-- Env file
-  ```bash path=null start=null
-  # copy template to local env
-  # macOS/Linux
-  cp .env.example .env.local
-  # Windows PowerShell
-  Copy-Item .env.example .env.local
-  ```
-- Required variables (examples; set values per your Appwrite project)
-  ```bash path=null start=null
-  NEXT_PUBLIC_APPWRITE_ENDPOINT=...
-  NEXT_PUBLIC_APPWRITE_PROJECT_ID=...
-  NEXT_PUBLIC_APPWRITE_DATABASE_ID=...
-  APPWRITE_API_KEY=...
-  JWT_SECRET=...
-  ```
-- Local Appwrite stack via Docker Compose
-  ```bash path=null start=null
-  docker-compose up -d
-  ```
-  Notes: Compose spins up Appwrite (port 3001), MariaDB, Redis, optional Next.js container and Nginx. The app itself runs on http://localhost:3000 when using npm run dev.
-
-High-level architecture
-- Next.js application (TypeScript, App Router)
-  - Path aliases: imports using @/* map to ./src/* (see tsconfig.json and vitest.config.ts)
-  - Performance: Next.js Turbopack used for dev/build; experimental optimizePackageImports configured in next.config.ts
-  - Images: next.config.ts configures formats, sizes, and long TTL caching
-- Authentication and route protection (Appwrite)
-  - Middleware: src/middleware.ts validates session server-side using Appwrite Account.get()
-  - Public paths include /, /account, /register, /admin/login, /admin/forgot-password, /api/auth/*, and Next static assets
-  - On failed auth, redirects to /admin/login for admin routes, or to /account with a redirect param for protected user routes (e.g., /checkout, /profile, /orders)
-  - For implementation details and usage examples, see AUTHENTICATION_README.md
-- API and services
-  - API endpoints are implemented under Next.js app routes (see README’s API Endpoints section). Postman collection at docs/api-documentation.json documents endpoints for auth, products, orders, customers, analytics, and bulk operations
-  - Business logic is organized under src/lib/* (auth/product/order/customer services, security utilities, error handling) per README’s project structure
+Architecture overview
+- App Router and pages (src/app)
+  - Public pages (home, catalog, product, cart/checkout, auth flows)
+  - Admin area (src/app/admin/*) with pages for analytics, products, orders, customers, brands, settings; server routes under src/app/api
+  - API routes (src/app/api/*): feature-scoped subtrees for auth, products, orders, customers, analytics, storage, image pipeline, etc. Admin APIs under src/app/api/admin/*
+- Domain and services (src/lib)
+  - Appwrite integration: appwrite.ts, appwrite-service.ts, appwrite-admin.ts, setup-appwrite.ts; auth-middleware.ts and rbac-service.ts for JWT/RBAC
+  - Core services: product-service.ts, order-service.ts, customer-service.ts, email-service.ts
+  - Image pipeline: image-service.ts, image-optimization-service.ts, placeholder-service.ts, image-validation-service.ts, image-caching-service.ts, image-optimization-pipeline.ts
+  - Brand/variations: brand-landing-service.ts, brand-auto-generation-service.ts, product-variation-service.ts, EnhancedVariationService.ts, variation-generator.ts, legacy-variation-converter.ts
+  - Caching/perf: services/CacheService.ts, performance-optimization-service.ts, performance-benchmarks.ts, bundle-optimization.ts
+  - Repositories: repositories/ProductRepository.ts (data access abstraction)
+  - Schema and migration: database-schema.ts, database-migration.ts; scripts/run-migration.ts
+  - React Query provider: react-query-provider.tsx
+  - Error handling: error-handler.ts
+- State and hooks
+  - Contexts: contexts/AuthContext.tsx, LocationContext.tsx; context/CartContext.tsx
+  - Hooks: src/hooks/* (auth, cart, product catalog/details/variations, notifications, debounce, URL sync, recently viewed, real-time pricing)
 - UI and components
-  - Components live under components/ and src/app/* for App Router pages; UI built with Tailwind, Radix UI, and shadcn configuration (see components.json)
-- Testing strategy (Vitest + Testing Library)
-  - Test environment: jsdom; global setup at src/test/setup.ts
-  - Coverage thresholds: 80% global for branches, functions, lines, statements; reports at ./coverage (text, json, html)
-  - Organization: unit tests under components/**/__tests__ and src/**/__tests__; integration at src/test/integration; e2e at src/test/e2e; visual at src/test/visual; performance and accessibility at dedicated files; custom runner at src/test/run-test-suite.ts
-- Linting
-  - ESLint flat config extends Next core-web-vitals and typescript; ignores node_modules, .next, build/out, example files, and test directories
+  - components/ui/* (shadcn-based primitives)
+  - Product catalog UI: components/product-catalog/*; admin UI in components/admin/*
+  - Cross-cutting UI: EnhancedErrorBoundary, image galleries, PWA prompts, loading states
+- Types and utilities
+  - types/* (domain models: product, variations, admin/common)
+  - utils/* (filterUtils, performance, accessibility, className util)
+- Styles and Tailwind
+  - Tailwind v4 config: tailwind.config.js; styles at styles/* (including animations)
 
-Notes for working in this repo
-- Use the provided npm scripts (which already enable Turbopack) for dev and build; avoid invoking next directly unless necessary
-- Most routes are protected by middleware; when adding new areas that require auth, ensure they’re covered by middleware and that redirect flows are correct
-- When authoring tests, prefer RTL and keep them under existing category folders to participate in coverage and suites
-- For API exploration, import docs/api-documentation.json into Postman; bearer token variable is {{jwt_token}}
+Testing layout
+- Config: vitest.config.ts (jsdom, coverage to ./coverage)
+- Suite orchestration: src/test/test-suite.config.ts and src/test/run-test-suite.ts
+- Categories:
+  - Unit: components/**/__tests__ and src/**/__tests__
+  - Integration: src/test/integration/*
+  - E2E: src/test/e2e/*
+  - Visual: src/test/visual/*
+  - Performance: src/test/performance.test.ts, src/test/responsive-styles.test.ts
+  - Accessibility: src/test/accessibility.test.ts
+- Docs: src/test/README.md and src/test/COMPREHENSIVE_TEST_SUITE.md
+
+Notes for agents
+- Prefer calling domain services in src/lib from API route handlers to keep concerns separated.
+- Admin functionality lives under src/app/admin and src/app/api/admin; ensure RBAC via rbac-service.ts/auth-middleware.ts.
+- When adding new features, keep type definitions in types/* and shared logic in src/lib/services or utils.

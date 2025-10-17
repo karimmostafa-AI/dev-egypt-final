@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import { Client, Databases, Storage } from 'appwrite';
 import ProductImageGallery from '@/components/ui/ProductImageGallery';
@@ -131,39 +131,59 @@ export default function ProductPage() {
   const displayProduct = product || staticProduct;
   const isUsingStaticData = !product;
 
-  // Transform data for UI components (works with both static and dynamic data)
-  const productImages = isUsingStaticData
-    ? (displayProduct as Product).colors.map(color => ({
-        src: (displayProduct as Product).images[color],
-        alt: `${displayProduct.name} - ${color}`,
-        color,
-        isMain: color === 'Royal'
-      }))
-    : (processedImages || []).map((processedImg: any) => {
-        // Handle the direct image format we're now using
+  // Transform data for UI components with proper main/back view separation
+  const productImages = useMemo(() => {
+    if (isUsingStaticData) {
+      // For static data, create main and back views for each color
+      const images: any[] = [];
+      (displayProduct as Product).colors.forEach((color, index) => {
+        // Main view
+        images.push({
+          src: (displayProduct as Product).images[color],
+          alt: `${displayProduct.name} - ${color} - Main View`,
+          color,
+          isMain: true,
+          imageType: 'main'
+        });
+        // Back view (reuse same image for static demo)
+        images.push({
+          src: (displayProduct as Product).images[color],
+          alt: `${displayProduct.name} - ${color} - Back View`,
+          color,
+          isMain: false,
+          imageType: 'back'
+        });
+      });
+      return images;
+    } else {
+      // For dynamic data, organize images by color and type
+      return (processedImages || []).map((processedImg: any) => {
         const imageData = processedImg.original || processedImg;
         console.log('🖼️ Processing image for gallery:', {
           src: imageData.url,
           alt: imageData.alt_text,
-          type: imageData.image_type
+          type: imageData.image_type,
+          variation: imageData.variation_id
         });
 
         return {
           src: imageData.url,
           alt: imageData.alt_text || `${displayProduct.name} - Image`,
-          color: imageData.variation_id || 'Default',
-          isMain: imageData.image_type === 'main'
+          color: imageData.variation_id || imageData.variation_value || 'Default',
+          isMain: imageData.image_type === 'main',
+          imageType: imageData.image_type
         };
       });
+    }
+  }, [isUsingStaticData, displayProduct, processedImages]);
 
   // Log the actual URLs being passed to the gallery
-  if (productImages.length > 0) {
-    console.log('🎨 ProductImageGallery URLs:', productImages.map(img => ({
-      src: img.src,
-      alt: img.alt,
-      type: img.isMain ? 'main' : 'gallery'
-    })));
-  }
+  console.log('🎨 ProductImageGallery URLs:', productImages.map(img => ({
+    src: img.src,
+    color: img.color,
+    type: img.imageType,
+    alt: img.alt
+  })));
 
   const variationGroups: VariationGroup[] = [];
 

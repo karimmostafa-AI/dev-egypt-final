@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Upload, Link as LinkIcon, X, Image as ImageIcon, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,10 +23,19 @@ export default function ColorVariationImageManager({
 }: ColorVariationImageManagerProps) {
   const [uploadingColor, setUploadingColor] = useState<string | null>(null);
   const [urlInputs, setUrlInputs] = useState<{ [key: string]: { main: string; back: string } }>({});
+  // Use stable ref that persists across renders
   const fileInputRefs = useRef<{ [key: string]: { main: HTMLInputElement | null; back: HTMLInputElement | null } }>({});
+  
+  // Initialize refs object for new colors
+  useEffect(() => {
+    colors.forEach(color => {
+      if (!fileInputRefs.current[color.id]) {
+        fileInputRefs.current[color.id] = { main: null, back: null };
+      }
+    });
+  }, [colors]);
 
   const handleFileUpload = async (colorId: string, type: "mainImageUrl" | "backImageUrl", file: File) => {
-    setUploadingColor(colorId);
     try {
       if (!file.type.startsWith("image/")) {
         alert("Please select a valid image file");
@@ -37,27 +46,42 @@ export default function ColorVariationImageManager({
         return;
       }
 
+      // IMMEDIATELY create blob URL and update UI (synchronous, instant preview)
+      const blobUrl = URL.createObjectURL(file);
+      console.log(`[ColorVariationImageManager] Created blob URL for ${type}:`, blobUrl);
+      onColorImageUpdate(colorId, { [type]: blobUrl });
+
+      // Then try to upload in background (non-blocking)
+      setUploadingColor(colorId);
       const formData = new FormData();
       formData.append("file", file);
       formData.append("productId", colorId);
       formData.append("folder", `color-variations/${colorId}`);
 
-      const response = await fetch("/api/admin/upload-image", {
-        method: "POST",
-        body: formData,
-      });
-
-      let imageUrl: string;
-      if (response.ok) {
-        const result = await response.json();
-        imageUrl = result.cdnUrl || result.url || URL.createObjectURL(file);
-      } else {
-        imageUrl = URL.createObjectURL(file);
+      try {
+        const response = await fetch("/api/admin/upload-image", {
+          method: "POST",
+          body: formData,
+        });
+        if (response.ok) {
+          const result = await response.json();
+          const serverUrl = result.cdnUrl || result.url;
+          if (serverUrl) {
+            console.log(`[ColorVariationImageManager] Server upload success, replacing blob with:`, serverUrl);
+            // Replace blob URL with server URL
+            onColorImageUpdate(colorId, { [type]: serverUrl });
+            // Clean up blob URL to free memory
+            URL.revokeObjectURL(blobUrl);
+          }
+        } else {
+          console.warn(`[ColorVariationImageManager] Server upload failed, keeping blob preview`);
+        }
+      } catch (networkErr) {
+        console.warn(`[ColorVariationImageManager] Network error during upload, keeping blob preview:`, networkErr);
       }
-
-      onColorImageUpdate(colorId, { [type]: imageUrl });
     } catch (error) {
-      console.error("Image upload failed:", error);
+      console.error("[ColorVariationImageManager] Fatal error:", error);
+      alert("Failed to process image. Please try again.");
     } finally {
       setUploadingColor(null);
     }
@@ -101,6 +125,8 @@ export default function ColorVariationImageManager({
     const fieldKey = type === "main" ? "mainImageUrl" : "backImageUrl";
     const imageUrl = color[fieldKey];
     const isUploading = uploadingColor === color.id;
+    
+    console.log(`[ImageUploadSection] Rendering ${color.name} ${type}:`, { imageUrl, isUploading });
 
     if (!fileInputRefs.current[color.id]) {
       fileInputRefs.current[color.id] = { main: null, back: null };
@@ -152,13 +178,23 @@ export default function ColorVariationImageManager({
               <div
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => handleDrop(e, color.id, fieldKey)}
-                onClick={() => fileInputRefs.current[color.id]?.[type]?.click()}
+                onClick={() => {
+                  console.log(`[Upload Card Click] Triggering file input for ${color.name} ${type}`);
+                  const input = fileInputRefs.current[color.id]?.[type];
+                  console.log(`[Upload Card Click] Input element:`, input);
+                  if (input) {
+                    input.click();
+                  } else {
+                    console.error(`[Upload Card Click] Input ref is null for ${color.id} ${type}`);
+                  }
+                }}
                 className={`relative border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all duration-200 ${
                   isUploading ? "border-blue-500 bg-blue-50" : "border-gray-300 hover:border-blue-400 hover:bg-blue-50"
                 } ${disabled && "opacity-50 cursor-not-allowed"}`}
               >
                 <input
                   ref={(el) => {
+                    console.log(`[Input Ref] Setting ref for ${color.name} ${type}:`, el);
                     if (fileInputRefs.current[color.id]) {
                       fileInputRefs.current[color.id][type] = el;
                     }
@@ -168,8 +204,21 @@ export default function ColorVariationImageManager({
                   className="hidden"
                   disabled={disabled}
                   onChange={(e) => {
+                    console.log(`[Input onChange] Fired for ${color.name} ${type}`);
                     const file = e.target.files?.[0];
-                    if (file) handleFileUpload(color.id, fieldKey, file);
+                    console.log(`[Input onChange] File selected:`, file);
+                    if (file) {
+                      // Capture the input element before async operation
+                      const inputElement = e.currentTarget;
+                      handleFileUpload(color.id, fieldKey, file).finally(() => {
+                        // Reset input so selecting the same file again triggers onChange
+                        if (inputElement) {
+                          inputElement.value = "";
+                        }
+                      });
+                    } else {
+                      console.warn(`[Input onChange] No file selected`);
+                    }
                   }}
                 />
 

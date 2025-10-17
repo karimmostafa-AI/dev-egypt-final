@@ -14,7 +14,8 @@ import Image from 'next/image';
 import { Button } from '../../../components/ui/button';
 import { useProductDetails } from '../../../hooks/useProductDetails';
 import { PageLoadingSpinner, ProgressiveLoader } from '../../../components/ui/LoadingStates';
-import EnhancedImageGallery from '../../../components/ui/EnhancedImageGallery';
+import ProductImageGallery from '../../../components/ui/ProductImageGallery';
+import ProductVariations, { VariationGroup, VariationOption } from '../../../components/ui/ProductVariations';
 import RelatedProducts from '../../../components/ui/RelatedProducts';
 
 interface Brand {
@@ -137,6 +138,26 @@ export default function ProductDetailPage() {
 
   // Memoize the product to prevent unnecessary re-renders
   const memoizedProduct = useMemo(() => product, [(product as any)?.$id || (product as any)?.id, product?.name, product?.price]);
+
+  // Auto-select first color and size for static data if not already selected
+  useEffect(() => {
+    if (isUsingStaticData && !selectedColor && !selectedSize) {
+      const colors = (product as Product).colorOptions?.split(',') || [];
+      const sizes = (product as Product).sizeOptions?.split(',') || [];
+      
+      if (colors.length > 0 && !selectedColor) {
+        const firstColor = colors[0].trim();
+        console.log('🎨 Auto-selecting first color:', firstColor);
+        setSelectedColor(firstColor);
+      }
+      
+      if (sizes.length > 0 && !selectedSize) {
+        const firstSize = sizes[0].trim();
+        console.log('📏 Auto-selecting first size:', firstSize);
+        setSelectedSize(firstSize);
+      }
+    }
+  }, [isUsingStaticData, product, selectedColor, selectedSize, setSelectedColor, setSelectedSize]);
 
   // Fetch additional data (brand, category) for both static and dynamic products
   useEffect(() => {
@@ -288,60 +309,74 @@ export default function ProductDetailPage() {
 
   // Get all product images for gallery with color variation support
   const getProductImages = (product: any) => {
-    const images: Array<{ src: string; alt: string; color?: string; isMain?: boolean }> = [];
+    const images: Array<{ src: string; alt: string; color?: string; isMain?: boolean; imageType?: string }> = [];
 
     console.log('🖼️ Getting product images:', {
       hasImages: !!product.images,
       isArray: Array.isArray(product.images),
       imageCount: product.images?.length,
       hasMainImageUrl: !!product.mainImageUrl,
-      isUsingStatic: isUsingStaticData
+      isUsingStatic: isUsingStaticData,
+      hasVariations: !!product.variations,
+      variationsType: typeof product.variations
     });
 
     // If we have images array from ProductRepository
-    if (product.images && Array.isArray(product.images)) {
+    if (product.images && Array.isArray(product.images) && product.images.length > 0) {
       product.images.forEach((img: any, index: number) => {
         images.push({
-          src: img.url,
+          src: img.url || img.image_url,
           alt: img.alt_text || `${product.name} - view ${index + 1}`,
-          color: img.variation_value && img.variation_value !== 'Default' ? img.variation_value : undefined,
-          isMain: img.image_type === 'main'
+          color: img.variation_value || img.variation_id || undefined,
+          isMain: img.image_type === 'main',
+          imageType: img.image_type
+        });
+      });
+    } else if (isUsingStaticData) {
+      // For static products, create images for each color
+      const colors = (product as Product).colorOptions?.split(',') || ['Royal', 'Navy', 'Black'];
+      colors.forEach(color => {
+        const trimmedColor = color.trim();
+        images.push({
+          src: `/figma/product-images/main-product-${trimmedColor.toLowerCase()}.png`,
+          alt: `${product.name} - ${trimmedColor} - Main View`,
+          color: trimmedColor,
+          isMain: true,
+          imageType: 'main'
+        });
+        images.push({
+          src: `/figma/product-images/main-product-${trimmedColor.toLowerCase()}.png`,
+          alt: `${product.name} - ${trimmedColor} - Back View`,
+          color: trimmedColor,
+          isMain: false,
+          imageType: 'back'
         });
       });
     } else {
-      // Fallback to old method for static products
+      // Fallback for dynamic products without images array
       const mainImageSrc = getImageSrc(product);
       if (mainImageSrc && !mainImageSrc.includes('placeholder')) {
         images.push({
           src: mainImageSrc,
           alt: `${product.name} - main view`,
-          isMain: true
+          isMain: true,
+          imageType: 'main'
         });
-      }
-      
-      // For static products, add back image if available
-      if (isUsingStaticData && product.mainImageUrl) {
-        const backImageUrl = product.mainImageUrl.replace('main-product', 'back-product');
-        if (backImageUrl !== mainImageSrc) {
-          images.push({
-            src: backImageUrl,
-            alt: `${product.name} - back view`,
-            isMain: false
-          });
-        }
       }
     }
 
     // Fallback to placeholder if no images found
     if (images.length === 0) {
+      console.warn('⚠️ No images found, using placeholder');
       images.push({
         src: 'https://via.placeholder.com/400x600?text=No+Image+Available',
         alt: `${product.name} - no image available`,
-        isMain: true
+        isMain: true,
+        imageType: 'main'
       });
     }
 
-    console.log('✅ Product images prepared:', images.length, 'images');
+    console.log('✅ Product images prepared:', images.length, 'images', images.map(i => ({ color: i.color, type: i.imageType })));
     return images;
   };
 
@@ -446,15 +481,15 @@ export default function ProductDetailPage() {
             <ProductErrorBoundary>
               <div className="space-y-4">
                 {/* Enhanced Image Gallery */}
-                <div className="bg-white rounded-lg overflow-hidden shadow-lg sticky top-8">
-                  <EnhancedImageGallery
+                <div className="bg-white rounded-lg p-4 shadow-lg sticky top-8">
+                  <ProductImageGallery
                     images={getProductImages(product)}
                     selectedColor={selectedColor}
                     onColorChange={setSelectedColor}
                     className="w-full"
                     priority={true}
-                    enableZoom={true}
-                    enableFullscreen={true}
+                    showThumbnails={true}
+                    maxThumbnails={8}
                   />
                 </div>
               </div>
@@ -510,7 +545,7 @@ export default function ProductDetailPage() {
               <ProductErrorBoundary>
                 <div className="space-y-6">
                   {/* Color Selection - Dynamic from product data */}
-                  {(!isUsingStaticData && product.variations) ? (() => {
+                  {(!isUsingStaticData && Array.isArray(product.variations) && product.variations.length > 0) ? (() => {
                     // Get unique colors from variations
                     const colorVariations = product.variations.filter((v: any) => 
                       v.variation_type === 'color' && v.is_active
@@ -628,7 +663,7 @@ export default function ProductDetailPage() {
                   ) : null}
 
                   {/* Size Selection - Dynamic from product data */}
-                  {(!isUsingStaticData && product.variations) ? (() => {
+                  {(!isUsingStaticData && Array.isArray(product.variations) && product.variations.length > 0) ? (() => {
                     // Get unique sizes from variations
                     const sizeVariations = product.variations.filter((v: any) => 
                       v.variation_type === 'size' && v.is_active
@@ -761,7 +796,7 @@ export default function ProductDetailPage() {
               <div className="space-y-3">
                 <button
                   onClick={handleAddToCart}
-                  disabled={(!isUsingStaticData && availability) ? !availability.isAvailable : (isUsingStaticData ? false : (product as any).units === 0)}
+                  disabled={!selectedColor || !selectedSize || ((!isUsingStaticData && availability) ? !availability.isAvailable : false)}
                   className={`w-full py-4 px-6 rounded-md font-semibold text-lg flex items-center justify-center gap-3 transition-colors ${
                     ((!isUsingStaticData && availability) ? !availability.isAvailable : (isUsingStaticData ? false : (product as any).units === 0))
                       ? 'bg-gray-300 text-gray-500 cursor-not-allowed'

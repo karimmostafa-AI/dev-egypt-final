@@ -296,31 +296,17 @@ export const ProductVariations: React.FC<ProductVariationsProps> = ({
           </div>
         )}
 
-        {/* Selection Feedback */}
-        {selectedOptionId && (
-          <div className={`mt-2 p-3 rounded-lg border ${
-            stockStatus.isAvailable
-              ? 'bg-green-50 border-green-200'
-              : 'bg-red-50 border-red-200'
-          }`}>
-            <p className={`text-sm ${
-              stockStatus.isAvailable ? 'text-green-800' : 'text-red-800'
-            }`}>
-              {stockStatus.isAvailable ? (
-                <>
-                  ✓ {group.options.find(opt => opt.id === selectedOptionId)?.label} selected
-                  {stockStatus.stockCount < 10 && stockStatus.stockCount > 0 && (
-                    <span className="block font-semibold">
-                      Only {stockStatus.stockCount} left in stock!
-                    </span>
-                  )}
-                </>
-              ) : (
-                <>
-                  ⚠ {stockStatus.reason || 'This combination is not available'}
-                </>
-              )}
-            </p>
+        {/* Low Stock Warning Only - No out of stock messages */}
+        {selectedOptionId && stockStatus.isAvailable && stockStatus.stockCount <= 5 && stockStatus.stockCount > 0 && (
+          <div className="mt-2 p-3 rounded-lg border bg-yellow-50 border-yellow-200">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-yellow-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+              <p className="text-sm text-yellow-800 font-medium">
+                Only {stockStatus.stockCount} left in stock - Order soon!
+              </p>
+            </div>
           </div>
         )}
       </div>
@@ -333,23 +319,16 @@ export const ProductVariations: React.FC<ProductVariationsProps> = ({
 
       {/* Enhanced Stock and Price Information */}
       <div className="space-y-3">
-        {/* Overall Stock Status */}
-        {stockStatus.isAvailable && stockStatus.stockCount > 0 && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                <p className="text-sm text-blue-800">
-                  This combination is available
-                </p>
-              </div>
-              {showStockCount && (
-                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">
-                  {stockStatus.stockCount} in stock
-                </span>
-              )}
+        {/* Overall Stock Status - Only show when available, remove stock count */}
+        {stockStatus.isAvailable && stockStatus.stockCount > 5 && (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              <p className="text-sm text-green-800 font-medium">
+                In Stock
+              </p>
             </div>
           </div>
         )}

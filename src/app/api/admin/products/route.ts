@@ -118,10 +118,18 @@ export async function GET(request: NextRequest) {
         const imageMappingService = createImageMappingService()
         const withImages = await imageMappingService.enhanceProductWithImages(product)
 
+        // Extract main and back images from the images array
+        const mainImage = images.find((img: any) => img.image_type === 'front')
+        const backImage = images.find((img: any) => img.image_type === 'back')
+
         return {
           ...enhanceProductWithVariations(withImages),
           variations,
           images,
+          mainImageUrl: mainImage?.image_url || '',
+          mainImageId: mainImage?.image_id || '',
+          backImageUrl: backImage?.image_url || '',
+          backImageId: backImage?.image_id || '',
         }
       })
     )
@@ -183,6 +191,13 @@ export async function POST(request: NextRequest) {
     const product_id = product.$id
 
     // Images (main/back/gallery)
+    console.log('📷 Image data received:', {
+      mainImage: data.mainImage ? 'present' : 'missing',
+      backImage: data.backImage ? 'present' : 'missing',
+      galleryImages: data.galleryImages?.length || 0,
+      variations: data.variations?.length || 0
+    })
+    
     const imageOps: Promise<any>[] = []
     const addImage = (payload: any) =>
       databases
@@ -193,9 +208,10 @@ export async function POST(request: NextRequest) {
       imageOps.push(
         addImage({
           product_id,
-          variation_id: null,
+          variation_id: "",
           image_type: "front",
           image_url: data.mainImage,
+          image_id: `img_${product_id}_front`,
           alt_text: `${data.name} front view`,
           is_primary: true,
           sort_order: 1,
@@ -206,28 +222,16 @@ export async function POST(request: NextRequest) {
       imageOps.push(
         addImage({
           product_id,
-          variation_id: null,
+          variation_id: "",
           image_type: "back",
           image_url: data.backImage,
+          image_id: `img_${product_id}_back`,
           alt_text: `${data.name} back view`,
           is_primary: false,
           sort_order: 2,
         })
       )
 
-    if (data.galleryImages)
-      data.galleryImages.forEach((url, i) =>
-        imageOps.push(
-          addImage({
-            product_id,
-            variation_id: null,
-            image_type: "gallery",
-            image_url: url,
-            alt_text: `${data.name} gallery ${i + 1}`,
-            sort_order: i + 3,
-          })
-        )
-      )
 
     // Variations
     if (data.variations?.length) {
@@ -257,6 +261,7 @@ export async function POST(request: NextRequest) {
                 variation_id: variationDoc.$id,
                 image_type: "gallery",
                 image_url: url,
+                image_id: `img_${variationDoc.$id}_${i}`,
                 alt_text: `${data.name} ${variation.color_name} image ${i + 1}`,
                 is_primary: i === 0,
                 sort_order: i + 1,
@@ -266,12 +271,25 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    await Promise.allSettled(imageOps)
+    const imageResults = await Promise.allSettled(imageOps)
+    
+    // Log image insertion results
+    const successfulImages = imageResults.filter(r => r.status === 'fulfilled').length
+    const failedImages = imageResults.filter(r => r.status === 'rejected')
+    
+    console.log(`📸 Images: ${successfulImages}/${imageOps.length} inserted successfully`)
+    if (failedImages.length > 0) {
+      console.warn('⚠️ Failed image insertions:', failedImages.map((r: any) => r.reason?.message))
+    }
 
     return NextResponse.json({
       success: true,
       product_id,
       message: "✅ Product created successfully",
+      stats: {
+        variations: data.variations?.length || 0,
+        images: successfulImages
+      }
     })
   } catch (error: any) {
     console.error("❌ Error creating product:", error)

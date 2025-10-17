@@ -16,7 +16,6 @@ import { Progress } from "@/components/ui/progress"
 import Link from "next/link"
 import ColorSelector from "@/components/admin/ColorSelector"
 import SizeSelector from "@/components/admin/SizeSelector"
-import ColorVariationImageManager from "@/components/admin/ColorVariationImageManager"
 import { ColorOption, SizeOption, ProductVariation as VariationType } from "@/types/product-variations"
 import { generateProductVariations, validateVariations } from "@/lib/variation-generator"
 
@@ -77,7 +76,6 @@ export default function NewProductPage() {
   const [selectedSizes, setSelectedSizes] = useState<SizeOption[]>([])
   const [generatedVariations, setGeneratedVariations] = useState<VariationType[]>([])
   const [hasVariations, setHasVariations] = useState(false)
-  const [colorManagerKey, setColorManagerKey] = useState(0)
 
   const [statusSettings, setStatusSettings] = useState({
     is_active: true,
@@ -320,7 +318,28 @@ export default function NewProductPage() {
       }
     } catch (error) {
       console.error('Error uploading image:', error)
-      alert('Failed to upload image. Please try again.')
+      // Fallback to local preview so the user still sees the image immediately
+      try {
+        const fallbackUrl = URL.createObjectURL(file)
+        const newImage: ProductImage = {
+          id: `${type}-${Date.now()}`,
+          url: fallbackUrl,
+          source: 'device',
+          type
+        }
+        setProductImages(prev => {
+          const filtered = prev.filter(img => img.type !== type)
+          return [...filtered, newImage]
+        })
+        if (type === 'main') {
+          updateBasicInfo('mainImageId', `img_${Date.now()}_main`)
+          updateBasicInfo('mainImageUrl', fallbackUrl)
+        } else if (type === 'back') {
+          updateBasicInfo('backImageId', `img_${Date.now()}_back`)
+          updateBasicInfo('backImageUrl', fallbackUrl)
+        }
+      } catch {}
+      alert('Failed to upload image to server. Showing local preview instead.')
     }
   }
 
@@ -362,20 +381,80 @@ export default function NewProductPage() {
     }
   }
 
-  // Handle color image updates (front/back)
-  const handleColorImageUpdate = (colorId: string, updates: Partial<ColorOption>) => {
-    setSelectedColors(prevColors => {
-      const newColors = prevColors.map(color => {
-        if (color.id === colorId) {
-          return { ...color, ...updates }; // create a new color object
-        }
-        return { ...color }; // clone others too so React sees array change
-      });
-      return [...newColors]; // create a new array reference
-    });
+  // Handle color image upload from device
+  const handleColorDeviceUpload = async (colorId: string, type: 'mainImageUrl' | 'backImageUrl', file: File) => {
+    try {
+      // Validate file
+      if (!file.type.startsWith('image/')) {
+        alert('Please select a valid image file')
+        return
+      }
 
-    // optional: if you use a key prop on ColorVariationImageManager
-    setColorManagerKey(prev => prev + 1);
+      if (file.size > 5 * 1024 * 1024) { // 5MB limit
+        alert('Image size should be less than 5MB')
+        return
+      }
+
+      // Create unique filename
+      const timestamp = Date.now()
+      const randomId = Math.random().toString(36).substring(2)
+      const fileExtension = file.name.split('.').pop()
+      const fileName = `color-${colorId}-${type}-${timestamp}-${randomId}.${fileExtension}`
+
+      // Upload to server
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('fileName', fileName)
+      formData.append('type', type)
+
+      const response = await fetch('/api/admin/upload-image', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        const imageUrl = result.url || `/uploads/images/${fileName}`
+        
+        // Update the color with the new image URL
+        setSelectedColors(prevColors => 
+          prevColors.map(color => 
+            color.id === colorId 
+              ? { ...color, [type]: imageUrl }
+              : color
+          )
+        )
+      } else {
+        throw new Error('Upload failed')
+      }
+    } catch (error) {
+      console.error('Error uploading color image:', error)
+      // Fallback to local preview
+      try {
+        const fallbackUrl = URL.createObjectURL(file)
+        setSelectedColors(prevColors => 
+          prevColors.map(color => 
+            color.id === colorId 
+              ? { ...color, [type]: fallbackUrl }
+              : color
+          )
+        )
+      } catch {}
+      alert('Failed to upload image to server. Showing local preview instead.')
+    }
+  }
+
+  // Handle color image URL input
+  const handleColorImageUrl = (colorId: string, type: 'mainImageUrl' | 'backImageUrl', url: string) => {
+    if (url.trim()) {
+      setSelectedColors(prevColors => 
+        prevColors.map(color => 
+          color.id === colorId 
+            ? { ...color, [type]: url.trim() }
+            : color
+        )
+      )
+    }
   }
 
   // Auto-generate variations when colors and sizes change
@@ -960,11 +1039,141 @@ export default function NewProductPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <ColorVariationImageManager
-                    key={colorManagerKey}
-                    colors={selectedColors}
-                    onColorImageUpdate={handleColorImageUpdate}
-                  />
+                  <div className="space-y-6">
+                    {selectedColors.map((color) => (
+                      <div key={color.id} className="border rounded-lg p-4 space-y-4">
+                        <div className="flex items-center gap-3 mb-4">
+                          <div 
+                            className="w-8 h-8 rounded-full border-2 border-gray-300" 
+                            style={{ backgroundColor: color.hexCode }}
+                          />
+                          <h3 className="font-semibold text-lg">{color.name}</h3>
+                        </div>
+                        
+                        <div className="grid gap-6 md:grid-cols-2">
+                          {/* Main/Front Image */}
+                          <div className="space-y-4">
+                            <Label className="text-base font-medium">Front View Image</Label>
+                            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                              {color.mainImageUrl ? (
+                                <div className="space-y-4">
+                                  <img
+                                    src={color.mainImageUrl}
+                                    alt={`${color.name} front view`}
+                                    className="max-h-48 mx-auto rounded"
+                                  />
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      setSelectedColors(prevColors => 
+                                        prevColors.map(c => 
+                                          c.id === color.id 
+                                            ? { ...c, mainImageUrl: '' }
+                                            : c
+                                        )
+                                      )
+                                    }}
+                                  >
+                                    Change Image
+                                  </Button>
+                                </div>
+                              ) : (
+                                <div className="space-y-4">
+                                  <Image className="h-12 w-12 mx-auto text-gray-400" />
+                                  <div className="space-y-2">
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0]
+                                        if (file) handleColorDeviceUpload(color.id, 'mainImageUrl', file)
+                                      }}
+                                      className="hidden"
+                                      id={`color-${color.id}-main-upload`}
+                                    />
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => document.getElementById(`color-${color.id}-main-upload`)?.click()}
+                                    >
+                                      <Upload className="mr-2 h-4 w-4" />
+                                      Upload from Device
+                                    </Button>
+                                    <p className="text-sm text-gray-500">or</p>
+                                    <Input
+                                      placeholder="Enter image URL"
+                                      onChange={(e) => handleColorImageUrl(color.id, 'mainImageUrl', e.target.value)}
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Back Image */}
+                          <div className="space-y-4">
+                            <Label className="text-base font-medium">Back View Image</Label>
+                            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                              {color.backImageUrl ? (
+                                <div className="space-y-4">
+                                  <img
+                                    src={color.backImageUrl}
+                                    alt={`${color.name} back view`}
+                                    className="max-h-48 mx-auto rounded"
+                                  />
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      setSelectedColors(prevColors => 
+                                        prevColors.map(c => 
+                                          c.id === color.id 
+                                            ? { ...c, backImageUrl: '' }
+                                            : c
+                                        )
+                                      )
+                                    }}
+                                  >
+                                    Change Image
+                                  </Button>
+                                </div>
+                              ) : (
+                                <div className="space-y-4">
+                                  <Image className="h-12 w-12 mx-auto text-gray-400" />
+                                  <div className="space-y-2">
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0]
+                                        if (file) handleColorDeviceUpload(color.id, 'backImageUrl', file)
+                                      }}
+                                      className="hidden"
+                                      id={`color-${color.id}-back-upload`}
+                                    />
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => document.getElementById(`color-${color.id}-back-upload`)?.click()}
+                                    >
+                                      <Upload className="mr-2 h-4 w-4" />
+                                      Upload from Device
+                                    </Button>
+                                    <p className="text-sm text-gray-500">or</p>
+                                    <Input
+                                      placeholder="Enter image URL"
+                                      onChange={(e) => handleColorImageUrl(color.id, 'backImageUrl', e.target.value)}
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </CardContent>
               </Card>
             )}
