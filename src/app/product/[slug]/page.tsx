@@ -139,25 +139,39 @@ export default function ProductDetailPage() {
   // Memoize the product to prevent unnecessary re-renders
   const memoizedProduct = useMemo(() => product, [(product as any)?.$id || (product as any)?.id, product?.name, product?.price]);
 
-  // Auto-select first color and size for static data if not already selected
+  // Auto-select first available color and size when product loads
   useEffect(() => {
-    if (isUsingStaticData && !selectedColor && !selectedSize) {
-      const colors = (product as Product).colorOptions?.split(',') || [];
-      const sizes = (product as Product).sizeOptions?.split(',') || [];
-      
-      if (colors.length > 0 && !selectedColor) {
-        const firstColor = colors[0].trim();
-        console.log('🎨 Auto-selecting first color:', firstColor);
-        setSelectedColor(firstColor);
-      }
-      
-      if (sizes.length > 0 && !selectedSize) {
-        const firstSize = sizes[0].trim();
-        console.log('📏 Auto-selecting first size:', firstSize);
-        setSelectedSize(firstSize);
+    console.log('🔍 Auto-select check:', {
+      isUsingStaticData,
+      hasDynamicProduct: !!dynamicProduct,
+      hasSelectedColor: !!selectedColor,
+      hasSelectedSize: !!selectedSize,
+      selectedColor,
+      selectedSize
+    });
+    
+    if (!isUsingStaticData && dynamicProduct && !selectedColor && !selectedSize) {
+      // Auto-select first color
+      if (Array.isArray(dynamicProduct.variations)) {
+        const colorVariations = dynamicProduct.variations.filter((v: any) => v.variation_type === 'color');
+        console.log('🎨 Found color variations:', colorVariations.length);
+        if (colorVariations.length > 0) {
+          const firstColor = colorVariations[0].variation_value;
+          console.log('🎨 Auto-selecting color:', firstColor);
+          setSelectedColor(firstColor);
+        }
+        
+        // Auto-select first size
+        const sizeVariations = dynamicProduct.variations.filter((v: any) => v.variation_type === 'size');
+        console.log('📏 Found size variations:', sizeVariations.length);
+        if (sizeVariations.length > 0) {
+          const firstSize = sizeVariations[0].variation_value;
+          console.log('📏 Auto-selecting size:', firstSize);
+          setSelectedSize(firstSize);
+        }
       }
     }
-  }, [isUsingStaticData, product, selectedColor, selectedSize, setSelectedColor, setSelectedSize]);
+  }, [dynamicProduct, isUsingStaticData, selectedColor, selectedSize, setSelectedColor, setSelectedSize]);
 
   // Fetch additional data (brand, category) for both static and dynamic products
   useEffect(() => {
@@ -532,13 +546,6 @@ export default function ProductDetailPage() {
                     )
                   )}
                 </div>
-                <p className="text-sm text-green-600 mt-2 flex items-center gap-2">
-                  <Check className="h-4 w-4" />
-                  {(!isUsingStaticData && availability)
-                    ? (availability.isAvailable ? `In Stock (${availability.stockQuantity} available)` : 'Out of Stock')
-                    : `In Stock (${isUsingStaticData ? '100' : (product as any).units || '100'} available)`
-                  }
-                </p>
               </div>
 
               {/* Enhanced Product Variations - Dynamic */}
@@ -548,7 +555,7 @@ export default function ProductDetailPage() {
                   {(!isUsingStaticData && Array.isArray(product.variations) && product.variations.length > 0) ? (() => {
                     // Get unique colors from variations
                     const colorVariations = product.variations.filter((v: any) => 
-                      v.variation_type === 'color' && v.is_active
+                      v.variation_type === 'color'
                     );
                     
                     // Remove duplicates
@@ -666,7 +673,7 @@ export default function ProductDetailPage() {
                   {(!isUsingStaticData && Array.isArray(product.variations) && product.variations.length > 0) ? (() => {
                     // Get unique sizes from variations
                     const sizeVariations = product.variations.filter((v: any) => 
-                      v.variation_type === 'size' && v.is_active
+                      v.variation_type === 'size'
                     );
                     
                     // Remove duplicates
@@ -755,17 +762,19 @@ export default function ProductDetailPage() {
               {/* Quantity Selector */}
               <div>
                 <label className="block text-sm font-semibold text-gray-900 mb-2">
-                  Quantity (Min: {product.min_order_quantity})
+                  Quantity (Min: {(product as any).min_order_quantity || 1})
                 </label>
                 <div className="flex items-center gap-4">
                   <div className="flex items-center border border-gray-300 rounded-md">
                     <button
-                      onClick={() => setQuantity(Math.max(
-                        (!isUsingStaticData && availability) ? availability.minOrderQuantity : (isUsingStaticData ? 1 : (product as any).min_order_quantity || 1),
-                        quantity - 1
-                      ))}
-                      className="px-4 py-3 hover:bg-gray-100 transition-colors"
-                      disabled={quantity <= ((!isUsingStaticData && availability) ? availability.minOrderQuantity : (isUsingStaticData ? 1 : (product as any).min_order_quantity || 1))}
+                      type="button"
+                      onClick={() => {
+                        if (quantity > 1) {
+                          setQuantity(quantity - 1);
+                        }
+                      }}
+                      className="px-4 py-3 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={quantity <= 1}
                     >
                       -
                     </button>
@@ -773,12 +782,11 @@ export default function ProductDetailPage() {
                       {quantity}
                     </span>
                     <button
-                      onClick={() => setQuantity(Math.min(
-                        (!isUsingStaticData && availability) ? availability.maxOrderQuantity : (isUsingStaticData ? 100 : (product as any).units || 100),
-                        quantity + 1
-                      ))}
+                      type="button"
+                      onClick={() => {
+                        setQuantity(quantity + 1);
+                      }}
                       className="px-4 py-3 hover:bg-gray-100 transition-colors"
-                      disabled={quantity >= ((!isUsingStaticData && availability) ? availability.maxOrderQuantity : (isUsingStaticData ? 100 : (product as any).units || 100))}
                     >
                       +
                     </button>
@@ -786,7 +794,7 @@ export default function ProductDetailPage() {
                   <span className="text-sm text-gray-600">
                     Max: {(!isUsingStaticData && availability)
                       ? availability.maxOrderQuantity
-                      : (isUsingStaticData ? '100' : (product as any).units || '100')
+                      : (isUsingStaticData ? '100' : (product as any).stock_quantity || '100')
                     } available
                   </span>
                 </div>
@@ -794,11 +802,16 @@ export default function ProductDetailPage() {
 
               {/* Add to Cart Button */}
               <div className="space-y-3">
+                {(() => {
+                  console.log('📭 Button state:', { selectedColor, selectedSize, disabled: !selectedColor || !selectedSize });
+                  return null;
+                })()}
                 <button
+                  type="button"
                   onClick={handleAddToCart}
-                  disabled={!selectedColor || !selectedSize || ((!isUsingStaticData && availability) ? !availability.isAvailable : false)}
+                  disabled={!selectedColor || !selectedSize}
                   className={`w-full py-4 px-6 rounded-md font-semibold text-lg flex items-center justify-center gap-3 transition-colors ${
-                    ((!isUsingStaticData && availability) ? !availability.isAvailable : (isUsingStaticData ? false : (product as any).units === 0))
+                    !selectedColor || !selectedSize
                       ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                       : addedToCart
                       ? 'bg-green-600 text-white'
@@ -813,7 +826,7 @@ export default function ProductDetailPage() {
                   ) : (
                     <>
                       <ShoppingCart className="h-6 w-6" />
-                      Add to Cart
+                      Add to Cart {!selectedColor || !selectedSize ? '(Select Options)' : ''}
                     </>
                   )}
                 </button>

@@ -44,7 +44,7 @@ const LazyImage: React.FC<LazyImageProps> = ({
   blurDataURL,
   onLoad,
   onError,
-  fallbackSrc = '/placeholder-image.jpg',
+  fallbackSrc = '/images/placeholder.svg',
   rootMargin = '50px',
   threshold = 0.1,
   sizes

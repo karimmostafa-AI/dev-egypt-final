@@ -80,8 +80,12 @@ export class ProductRepository implements IProductRepository {
 
 
   async findBySlug(slug: string): Promise<ProductData | null> {
+    console.log('🔍 ProductRepository.findBySlug called with:', slug);
+    console.log('📦 Database config:', { DATABASE_ID, PRODUCTS_COLLECTION_ID });
+    
     try {
       // Fetch the main product
+      console.log('🔎 Querying Appwrite for product with slug:', slug);
       const response = await this.databases.listDocuments(
         DATABASE_ID,
         PRODUCTS_COLLECTION_ID,
@@ -92,19 +96,39 @@ export class ProductRepository implements IProductRepository {
         ]
       );
 
+      console.log('📊 Query response:', {
+        total: response.total,
+        documentsFound: response.documents.length,
+        documents: response.documents.map(d => ({ id: d.$id, slug: d.slug, name: d.name }))
+      });
+
       if (response.documents.length === 0) {
+        console.warn('⚠️ No product found with slug:', slug);
         return null;
       }
 
       const productDocument = response.documents[0];
+      console.log('✅ Product document found:', productDocument.$id);
 
       // Fetch variations for this product
+      console.log('🔄 Fetching variations for product:', productDocument.$id);
       const variations = await this.fetchProductVariations(productDocument.$id);
+      console.log('📋 Variations fetched:', variations.length, 'variations');
 
       // Fetch images for this product
+      console.log('🔄 Fetching images for product:', productDocument.$id);
       const images = await this.fetchProductImages(productDocument.$id);
+      console.log('🖼️ Images fetched:', images.length, 'images');
 
-      return this.transformDocument(productDocument, variations, images);
+      const transformed = this.transformDocument(productDocument, variations, images);
+      console.log('✨ Transformed product:', {
+        id: transformed.id,
+        name: transformed.name,
+        variationsCount: transformed.variations.length,
+        imagesCount: transformed.images.length
+      });
+      
+      return transformed;
     } catch (error) {
       console.error('Error fetching product by slug:', error);
       throw new Error(`Failed to fetch product: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -142,19 +166,78 @@ export class ProductRepository implements IProductRepository {
         ]
       );
 
-      return response.documents.map(doc => ({
-        id: doc.$id,
-        product_id: doc.product_id,
-        variation_type: doc.variation_type,
-        variation_value: doc.variation_value,
-        variation_label: doc.variation_label,
-        stock_quantity: doc.stock_quantity,
-        price_modifier: doc.price_modifier,
-        sku: doc.sku,
-        image_id: doc.image_id,
-        is_active: doc.is_active,
-        sort_order: doc.sort_order
-      }));
+      // First map all documents with SKU parsing
+      const variations = response.documents.map(doc => {
+        // Parse SKU pattern: TEMP_MGV-{color}-{size}
+        let color = null;
+        let size = null;
+        
+        if (doc.sku) {
+          const skuParts = doc.sku.split('-');
+          if (skuParts.length >= 3) {
+            color = skuParts[1];
+            size = skuParts[2];
+          }
+        }
+        
+        return {
+          id: doc.$id,
+          product_id: doc.product_id,
+          variation_type: doc.variation_type,
+          variation_value: doc.variation_value,
+          variation_label: doc.variation_label,
+          stock_quantity: doc.stock_quantity,
+          price_modifier: doc.price_modifier,
+          sku: doc.sku,
+          image_id: doc.image_id,
+          is_active: doc.is_active,
+          sort_order: doc.sort_order,
+          // Parsed SKU data
+          _parsed: { color, size }
+        };
+      });
+      
+      // If variation_type is missing, expand each combo into separate color/size variations
+      const hasVariationType = variations.some(v => v.variation_type);
+      if (!hasVariationType && variations.length > 0) {
+        const expanded: any[] = [];
+        const uniqueColors = new Set<string>();
+        const uniqueSizes = new Set<string>();
+        
+        // Collect unique colors and sizes
+        variations.forEach(v => {
+          if (v._parsed.color) uniqueColors.add(v._parsed.color);
+          if (v._parsed.size) uniqueSizes.add(v._parsed.size);
+        });
+        
+        // Create color variations
+        Array.from(uniqueColors).forEach((color, index) => {
+          expanded.push({
+            ...variations[0],
+            id: `${variations[0].id}_color_${index}`,
+            variation_type: 'color',
+            variation_value: color.toLowerCase(),
+            variation_label: color.charAt(0).toUpperCase() + color.slice(1).toLowerCase(),
+            sort_order: index
+          });
+        });
+        
+        // Create size variations
+        Array.from(uniqueSizes).forEach((size, index) => {
+          expanded.push({
+            ...variations[0],
+            id: `${variations[0].id}_size_${index}`,
+            variation_type: 'size',
+            variation_value: size.toUpperCase(),
+            variation_label: size.toUpperCase(),
+            sort_order: uniqueColors.size + index
+          });
+        });
+        
+        return expanded.map(({ _parsed, ...rest }) => rest);
+      }
+      
+      return variations.map(({ _parsed, ...rest }) => rest);
     } catch (error) {
       console.warn('Error fetching product variations:', error);
       return [];
@@ -168,7 +251,6 @@ export class ProductRepository implements IProductRepository {
         PRODUCT_IMAGES_COLLECTION_ID,
         [
           Query.equal('product_id', productId),
-          Query.equal('is_active', true),
           Query.orderAsc('sort_order')
         ]
       );
@@ -280,17 +362,32 @@ export class ProductRepository implements IProductRepository {
   }
 
   private transformDocument(document: any, fetchedVariations: ProductVariation[] = [], fetchedImages: ProductImage[] = []): ProductData {
+    console.log('🔧 transformDocument called with:', {
+      docId: document.$id,
+      docSlug: document.slug,
+      fetchedVariationsCount: fetchedVariations.length,
+      fetchedImagesCount: fetchedImages.length,
+      hasColorOptions: !!document.colorOptions,
+      hasSizeOptions: !!document.sizeOptions,
+      hasVariationsField: !!document.variations,
+      hasMainImageUrl: !!document.mainImageUrl
+    });
+    
     // Parse JSON fields
     let variations: ProductVariation[] = [];
     let images: ProductImage[] = [];
 
     // Use fetched data if provided, otherwise parse from document
     if (fetchedVariations.length > 0) {
+      console.log('✅ Using fetched variations:', fetchedVariations.length);
       variations = fetchedVariations;
     }
 
     if (fetchedImages.length > 0) {
+      console.log('✅ Using fetched images:', fetchedImages.length);
       images = fetchedImages;
+    } else if (fetchedImages.length === 0) {
+      console.log('⚠️ No fetched images, will try parsing from document fields');
     }
 
     // Handle variations - check multiple possible field names
@@ -358,23 +455,38 @@ export class ProductRepository implements IProductRepository {
           }
         }
 
-        // Generate all variation combinations
+        // Generate separate color and size variations (not combinations)
         if (colorOptions.length > 0 && sizeOptions.length > 0) {
-          let varIndex = 0;
-          colorOptions.forEach((color: any) => {
-            sizeOptions.forEach((size: any) => {
-              variations.push({
-                id: `${color.id}-${size.id}`,
-                product_id: document.$id,
-                variation_type: 'both' as any,
-                variation_value: `${color.name}-${size.name}`,
-                variation_label: `${color.name} / ${size.name}`,
-                stock_quantity: size.stock || 0,
-                price_modifier: size.priceModifier || 0,
-                sku: `${document.sku || 'SKU'}-${color.id}-${size.id}`,
-                is_active: true,
-                sort_order: varIndex++
-              });
+          // Create color variations
+          colorOptions.forEach((color: any, index: number) => {
+            variations.push({
+              id: color.id,
+              product_id: document.$id,
+              variation_type: 'color',
+              variation_value: color.name,
+              variation_label: color.name,
+              stock_quantity: document.stockQuantity || 0,
+              price_modifier: 0,
+              sku: `${document.sku || 'SKU'}-${color.id}`,
+              image_id: color.frontImageUrl, // Store image URL for later use
+              is_active: true,
+              sort_order: index
+            });
+          });
+          
+          // Create size variations
+          sizeOptions.forEach((size: any, index: number) => {
+            variations.push({
+              id: size.id,
+              product_id: document.$id,
+              variation_type: 'size',
+              variation_value: size.name,
+              variation_label: size.name,
+              stock_quantity: size.stock || 0,
+              price_modifier: size.priceModifier || 0,
+              sku: `${document.sku || 'SKU'}-${size.id}`,
+              is_active: true,
+              sort_order: index
             });
           });
         } else if (colorOptions.length > 0) {
@@ -454,8 +566,9 @@ export class ProductRepository implements IProductRepository {
         images = JSON.parse(document.images);
       } else if (Array.isArray(document.images)) {
         images = document.images;
-      } else if (document.mainImageId || document.backImageId) {
+      } else if (document.mainImageUrl || document.backImageUrl || document.mainImageId || document.backImageId) {
         // Create images from the available image data
+        console.log('🖼️ Falling back to mainImageUrl/backImageUrl from document');
         const imageIndex = 0;
 
         if (document.mainImageUrl) {
