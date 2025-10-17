@@ -65,7 +65,7 @@ const PREDEFINED_COLORS = [
   { name: 'Chocolate', hexCode: '#7C2D12', category: 'brown' },
 
   // Fashion Colors
-  { name: 'Burgundy', hexCode: '#7C2D12', category: 'fashion' },
+  { name: 'Burgundy', hexCode: '#800020', category: 'fashion' },
   { name: 'Emerald', hexCode: '#059669', category: 'fashion' },
   { name: 'Sapphire', hexCode: '#1E40AF', category: 'fashion' },
   { name: 'Coral', hexCode: '#FF6B6B', category: 'fashion' },

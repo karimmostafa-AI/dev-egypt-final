@@ -185,7 +185,6 @@ export class AuthServiceClass {
         };
       }
 
-      // Get current user - Appwrite handles HttpOnly cookie automatically
       console.log('🔍 Attempting to get current user...');
       const user = await account.get();
       console.log('✅ Current user retrieved successfully:', user.$id);
@@ -195,20 +194,14 @@ export class AuthServiceClass {
         data: user
       };
     } catch (error: any) {
-      // Log the actual error for debugging with safe property access
-      console.error('❌ Auth service error getting current user:', {
-        message: error?.message || 'No message available',
-        code: error?.code || 'No code available',
-        type: error?.type || 'No type available',
-        stack: error?.stack || 'No stack trace available',
-        errorObject: error,
-        errorConstructor: error?.constructor?.name || 'Unknown constructor',
-        errorKeys: error ? Object.keys(error) : 'No keys (error is null/undefined)'
-      });
+      // Handle authentication errors gracefully - these are NORMAL for unauthenticated users
+      const isGuestError =
+        error?.code === 401 ||
+        error?.message?.includes('missing scopes') ||
+        error?.message?.includes('User (role: guests)');
 
-      // Handle authentication errors gracefully - including missing scopes for guests
-      // These are normal for unauthenticated users, so don't log them as errors
-      if (error?.code === 401 || error?.message?.includes('missing scopes') || error?.message?.includes('User (role: guests)')) {
+      if (isGuestError) {
+        // This is expected for unauthenticated users - log as info, not error
         console.log('ℹ️ User not authenticated (normal for guests)');
         return {
           success: false,
@@ -216,20 +209,65 @@ export class AuthServiceClass {
         };
       }
 
-      // For network errors, provide more specific error message
+      // For network errors, provide specific error message
       if (error?.message?.includes('Failed to fetch') || error?.message?.includes('NetworkError')) {
         console.error('🌐 Network error - check Appwrite endpoint configuration');
+        console.error('Error details:', error.message);
         return {
           success: false,
           error: 'Network error - unable to connect to authentication service'
         };
       }
 
+      // For unexpected errors, log them properly
+      console.error('❌ Unexpected auth error:', error);
+      if (error?.message) console.error('Message:', error.message);
+      if (error?.code) console.error('Code:', error.code);
+      if (error?.type) console.error('Type:', error.type);
+
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to get current user'
       };
     }
+  }
+
+
+  // Helper method to determine if error is authentication-related
+  private isAuthenticationError(error: any): boolean {
+    if (!error) return false;
+
+    const authErrorCodes = [401, '401', 'unauthorized', 'Unauthorized'];
+    const authErrorMessages = ['missing scopes', 'User (role: guests)', 'not authenticated', 'authentication failed'];
+
+    return authErrorCodes.some(code => error?.code === code || error?.message?.includes(code)) ||
+           authErrorMessages.some(msg => error?.message?.includes(msg));
+  }
+
+  // Helper method to determine if error is network-related
+  private isNetworkError(error: any): boolean {
+    if (!error) return false;
+
+    const networkErrorMessages = [
+      'Failed to fetch',
+      'NetworkError',
+      'Network request failed',
+      'fetch',
+      'CORS',
+      'timeout',
+      'ECONNREFUSED',
+      'ENOTFOUND',
+      'connection refused'
+    ];
+
+    return networkErrorMessages.some(msg => error?.message?.includes(msg)) ||
+           error?.name === 'NetworkError' ||
+           error?.code === 'NETWORK_ERROR';
+  }
+
+  // Helper method for delay (used in retry logic)
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   // Get current session
@@ -486,7 +524,6 @@ export class AuthServiceClass {
       console.log('🧪 Testing Appwrite connection...');
 
       // Test basic connectivity by trying to get account info
-      // This will fail if the endpoint is not reachable
       await account.get();
 
       console.log('✅ Appwrite connection test successful');
@@ -499,16 +536,29 @@ export class AuthServiceClass {
         }
       };
     } catch (error: any) {
-      console.error('❌ Appwrite connection test failed:', {
-        message: error?.message || 'No message available',
-        code: error?.code || 'No code available',
-        type: error?.type || 'No type available',
-        endpoint: process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT,
-        projectId: process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID,
-        errorObject: error,
-        errorConstructor: error?.constructor?.name || 'Unknown constructor',
-        errorKeys: error ? Object.keys(error) : 'No keys (error is null/undefined)'
-      });
+      const isGuestError =
+        error?.code === 401 ||
+        error?.message?.includes('missing scopes') ||
+        error?.message?.includes('User (role: guests)');
+
+      if (isGuestError) {
+        console.log('ℹ️ Connection test: User not authenticated (expected for guests)');
+        return {
+          success: false,
+          error: 'User not authenticated',
+          data: {
+            endpoint: process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || 'unknown',
+            projectId: process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || 'unknown',
+            connected: true // Endpoint is reachable, just not authenticated
+          }
+        };
+      }
+
+      // For actual connection failures, log properly
+      console.error('❌ Appwrite connection test failed');
+      console.error('Error:', error?.message || error);
+      console.error('Endpoint:', process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT);
+      console.error('Project ID:', process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID);
 
       return {
         success: false,

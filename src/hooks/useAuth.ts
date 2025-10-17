@@ -56,8 +56,19 @@ export const useAuth = (): UseAuthReturn => {
         // Silently check for an authenticated user in the browser
         // Appwrite will manage session cookies automatically
         console.log('🔐 Initializing auth check...');
+        console.log('🔐 Browser environment check:', {
+          isBrowser: typeof window !== 'undefined',
+          hasLocalStorage: typeof localStorage !== 'undefined',
+          userAgent: navigator?.userAgent?.substring(0, 100)
+        });
+
         const userResponse = await authService.getCurrentUser();
-        console.log('🔐 Auth check completed:', userResponse);
+        console.log('🔐 Auth check completed:', {
+          success: userResponse.success,
+          hasData: !!userResponse.data,
+          error: userResponse.error,
+          dataKeys: userResponse.data ? Object.keys(userResponse.data) : 'No data'
+        });
 
         if (userResponse.success && userResponse.data) {
           const user: User = {

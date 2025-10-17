@@ -77,6 +77,7 @@ export default function NewProductPage() {
   const [selectedSizes, setSelectedSizes] = useState<SizeOption[]>([])
   const [generatedVariations, setGeneratedVariations] = useState<VariationType[]>([])
   const [hasVariations, setHasVariations] = useState(false)
+  const [colorManagerKey, setColorManagerKey] = useState(0)
 
   const [statusSettings, setStatusSettings] = useState({
     is_active: true,
@@ -361,11 +362,20 @@ export default function NewProductPage() {
     }
   }
 
-  // Handle color image updates
+  // Handle color image updates (front/back)
   const handleColorImageUpdate = (colorId: string, updates: Partial<ColorOption>) => {
-    setSelectedColors(prev => prev.map(color => 
-      color.id === colorId ? { ...color, ...updates } : color
-    ))
+    setSelectedColors(prevColors => {
+      const newColors = prevColors.map(color => {
+        if (color.id === colorId) {
+          return { ...color, ...updates }; // create a new color object
+        }
+        return { ...color }; // clone others too so React sees array change
+      });
+      return [...newColors]; // create a new array reference
+    });
+
+    // optional: if you use a key prop on ColorVariationImageManager
+    setColorManagerKey(prev => prev + 1);
   }
 
   // Auto-generate variations when colors and sizes change
@@ -951,6 +961,7 @@ export default function NewProductPage() {
                 </CardHeader>
                 <CardContent>
                   <ColorVariationImageManager
+                    key={colorManagerKey}
                     colors={selectedColors}
                     onColorImageUpdate={handleColorImageUpdate}
                   />
