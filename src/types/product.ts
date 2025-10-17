@@ -13,14 +13,15 @@ export interface Product {
   is_new: boolean
   is_featured: boolean
   hasVariations: boolean
-  variations?: string
-  colorOptions?: string
-  sizeOptions?: string
+  // legacy data may be string or arrays/objects; use `any` for compatibility
+  variations?: any
+  colorOptions?: any
+  sizeOptions?: any
   backImageId?: string
   mainImageUrl?: string
   backImageUrl?: string
-  galleryImages?: string
-  imageVariations?: string
+  galleryImages?: any
+  imageVariations?: any
   mainImageId?: string
   media_id?: string
   meta_title?: string
@@ -59,14 +60,14 @@ export interface CreateProductData {
   is_new: boolean
   is_featured: boolean
   hasVariations: boolean
-  variations?: string
-  colorOptions?: string
-  sizeOptions?: string
+  variations?: any
+  colorOptions?: any
+  sizeOptions?: any
   backImageId?: string
   mainImageUrl?: string
   backImageUrl?: string
-  galleryImages?: string
-  imageVariations?: string
+  galleryImages?: any
+  imageVariations?: any
   mainImageId?: string
   compareAtPrice?: number | null
   costPerItem?: number | null

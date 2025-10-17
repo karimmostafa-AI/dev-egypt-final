@@ -20,35 +20,6 @@ import ColorVariationImageManager from "@/components/admin/ColorVariationImageMa
 import { ColorOption, SizeOption, ProductVariation as VariationType } from "@/types/product-variations"
 import { generateProductVariations, validateVariations } from "@/lib/variation-generator"
 
-// Color palette for product variations
-const colorPalette = [
-  { name: 'Black', hex: '#000000', rgb: '0,0,0' },
-  { name: 'White', hex: '#FFFFFF', rgb: '255,255,255' },
-  { name: 'Red', hex: '#FF0000', rgb: '255,0,0' },
-  { name: 'Green', hex: '#00FF00', rgb: '0,255,0' },
-  { name: 'Blue', hex: '#0000FF', rgb: '0,0,255' },
-  { name: 'Yellow', hex: '#FFFF00', rgb: '255,255,0' },
-  { name: 'Orange', hex: '#FFA500', rgb: '255,165,0' },
-  { name: 'Purple', hex: '#800080', rgb: '128,0,128' },
-  { name: 'Pink', hex: '#FFC0CB', rgb: '255,192,203' },
-  { name: 'Gray', hex: '#808080', rgb: '128,128,128' },
-  { name: 'Brown', hex: '#A52A2A', rgb: '165,42,42' },
-  { name: 'Navy', hex: '#000080', rgb: '0,0,128' },
-  { name: 'Teal', hex: '#008080', rgb: '0,128,128' },
-  { name: 'Maroon', hex: '#800000', rgb: '128,0,0' },
-  { name: 'Olive', hex: '#808000', rgb: '128,128,0' },
-  { name: 'Cyan', hex: '#00FFFF', rgb: '0,255,255' },
-  { name: 'Magenta', hex: '#FF00FF', rgb: '255,0,255' },
-  { name: 'Silver', hex: '#C0C0C0', rgb: '192,192,192' },
-  { name: 'Gold', hex: '#FFD700', rgb: '255,215,0' },
-  { name: 'Beige', hex: '#F5F5DC', rgb: '245,245,220' },
-]
-
-// Size options for product variations
-const sizeOptions = [
-  'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL',
-  'One Size', '28', '30', '32', '34', '36', '38', '40', '42', '44'
-]
 
 interface Brand {
   $id: string
@@ -63,15 +34,6 @@ interface Category {
   status: boolean
 }
 
-interface LocalProductVariation {
-  id: string
-  color?: string
-  colorName?: string
-  size?: string
-  imageUrl: string
-  imageSource: 'device' | 'url'
-  type: 'color' | 'size' | 'both'
-}
 
 interface ProductImage {
   id: string
@@ -109,7 +71,6 @@ export default function NewProductPage() {
   })
 
   const [productImages, setProductImages] = useState<ProductImage[]>([])
-  const [oldProductVariations, setOldProductVariations] = useState<any[]>([])
   
   // New variation state
   const [selectedColors, setSelectedColors] = useState<ColorOption[]>([])
@@ -283,7 +244,15 @@ export default function NewProductPage() {
         }
         return true
       case 3:
-        return true // Variations are optional
+        // Variations are optional, but if colors are selected, validate them
+        if (selectedColors.length > 0 && selectedSizes.length === 0) {
+          return confirm("You've selected colors but no sizes. The product will have color-only variations. Continue?")
+        }
+        if (selectedSizes.length > 0 && selectedColors.length === 0) {
+          alert("If you select sizes, you must also select at least one color")
+          return false
+        }
+        return true
       default:
         return true
     }
@@ -419,39 +388,6 @@ export default function NewProductPage() {
     }
   }, [selectedColors, selectedSizes, basicInfo.price, basicInfo.name])
 
-  // Legacy variation management (keeping for backwards compatibility)
-  const addColorVariation = (color: string, colorName: string) => {
-    const newVariation: any = {
-      id: `variation-${Date.now()}`,
-      color,
-      colorName,
-      imageUrl: '',
-      imageSource: 'device',
-      type: 'color'
-    }
-    setOldProductVariations(prev => [...prev, newVariation])
-  }
-
-  const addSizeVariation = (size: string) => {
-    const newVariation: any = {
-      id: `variation-${Date.now()}`,
-      size,
-      imageUrl: '',
-      imageSource: 'device',
-      type: 'size'
-    }
-    setOldProductVariations(prev => [...prev, newVariation])
-  }
-
-  const updateVariation = (id: string, field: string, value: string) => {
-    setOldProductVariations(prev => prev.map(variation =>
-      variation.id === id ? { ...variation, [field]: value } : variation
-    ))
-  }
-
-  const removeVariation = (id: string) => {
-    setOldProductVariations(prev => prev.filter(variation => variation.id !== id))
-  }
 
   // Final submission
   const handleFinalSubmit = async () => {
@@ -467,26 +403,71 @@ export default function NewProductPage() {
       const mainImage = productImages.find(img => img.type === 'main')
       const backImage = productImages.find(img => img.type === 'back')
 
+      // Map generated variations to backend format
+      const backendVariations = generatedVariations.map((variation) => {
+        const color = selectedColors.find(c => c.id === variation.colorId)
+        const size = selectedSizes.find(s => s.id === variation.sizeId)
+
+        // Collect images for this variation
+         const variationImages: string[] = []
+         if (color?.mainImageUrl) variationImages.push(color.mainImageUrl)
+         if (color?.backImageUrl) variationImages.push(color.backImageUrl)
+
+        return {
+          color_name: color?.name || 'Default',
+          color_hex: color?.hexCode || '#000000',
+          sku: variation.sku || `${slug}-${color?.name || 'default'}-${size?.name || 'onesize'}`.toLowerCase().replace(/\s+/g, '-'),
+          stock_quantity: variation.stock || 0,
+          price_modifier: size?.priceModifier || 0,
+          is_active: true,
+          sort_order: generatedVariations.indexOf(variation),
+          images: variationImages,
+        }
+      })
+
+      // If no generated variations but we have selected colors, create color-only variations
+      const variationsToSend = backendVariations.length > 0
+        ? backendVariations
+        : selectedColors.length > 0
+          ? selectedColors.map((color, index) => {
+              const images: string[] = []
+              if (color.mainImageUrl) images.push(color.mainImageUrl)
+              if (color.backImageUrl) images.push(color.backImageUrl)
+
+              return {
+                color_name: color.name,
+                color_hex: color.hexCode,
+                sku: `${slug}-${color.name}-onesize`.toLowerCase().replace(/\s+/g, '-'),
+                stock_quantity: 100, // Default stock
+                price_modifier: 0,
+                is_active: true,
+                sort_order: index,
+                images,
+              }
+            })
+          : [] // No variations
+
       const productData = {
         ...basicInfo,
         ...statusSettings,
         slug,
-        // Set main image data
-        mainImageId: mainImage ? `img_${Date.now()}_main` : '',
-        mainImageUrl: mainImage?.url || '',
-        backImageId: backImage ? `img_${Date.now()}_back` : '',
-        backImageUrl: backImage?.url || '',
-        // Store images
-        images: JSON.stringify(productImages),
-        // Store variation data - new format with color/size options and generated variations
-        selectedColors: JSON.stringify(selectedColors),
-        selectedSizes: JSON.stringify(selectedSizes),
-        generatedVariations: JSON.stringify(generatedVariations),
-        // Legacy variations for backwards compatibility
-        variations: JSON.stringify(oldProductVariations),
+        // Main and back images
+        mainImage: mainImage?.url || '',
+        backImage: backImage?.url || '',
+        // Gallery images (empty for now, but can be extended)
+        galleryImages: [],
+        // Send variations as array (will be auto-stringified by fetch)
+        variations: variationsToSend,
       }
 
-      console.log("Creating product:", productData)
+      console.log("📦 Creating product with data:", {
+        name: productData.name,
+        slug: productData.slug,
+        hasMainImage: !!productData.mainImage,
+        hasBackImage: !!productData.backImage,
+        variationsCount: variationsToSend.length,
+        variationsPreview: variationsToSend.slice(0, 2),
+      })
 
       const response = await fetch('/api/admin/products', {
         method: 'POST',
@@ -499,13 +480,16 @@ export default function NewProductPage() {
       const result = await response.json()
 
       if (response.ok) {
+        console.log("✅ Product created successfully:", result)
+        alert(`✅ Product created successfully! ${result.stats?.variations || 0} variations, ${result.stats?.images || 0} images`)
         router.push("/admin/products")
       } else {
+        console.error("❌ Server error:", result)
         throw new Error(result.error || 'Failed to create product')
       }
     } catch (error) {
-      console.error("Error creating product:", error)
-      alert(`Error creating product: ${error instanceof Error ? error.message : 'Please try again.'}`)
+      console.error("❌ Error creating product:", error)
+      alert(`❌ Error creating product: ${error instanceof Error ? error.message : 'Please try again.'}`)
     } finally {
       setIsLoading(false)
     }
@@ -554,7 +538,10 @@ export default function NewProductPage() {
             Step 2: Product Images
           </span>
           <span className={currentStep >= 3 ? "text-primary font-medium" : "text-muted-foreground"}>
-            Step 3: Variations & Review
+            Step 3: Variations
+          </span>
+          <span className={currentStep >= 4 ? "text-primary font-medium" : "text-muted-foreground"}>
+            Step 4: Review
           </span>
         </div>
         <Progress value={(currentStep / totalSteps) * 100} className="h-2" />
