@@ -302,7 +302,7 @@ export default function AdminDashboard() {
                           <div className="text-xs text-muted-foreground">{order.customer_email}</div>
                         </div>
                       </TableCell>
-                      <TableCell>${order.total.toFixed(2)}</TableCell>
+                      <TableCell>${Number(order.total_amount ?? order.total ?? 0).toFixed(2)}</TableCell>
                       <TableCell>
                         <Badge className={statusColors[order.status as keyof typeof statusColors] || "bg-gray-100 text-gray-800"}>
                           {order.status}

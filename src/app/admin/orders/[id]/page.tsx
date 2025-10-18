@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useParams, useRouter } from "next/navigation"
 import {
   ArrowLeft,
@@ -45,92 +45,51 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import Link from "next/link"
 
-// Mock order data - in real app, this would be fetched based on the ID
-const mockOrder = {
-  $id: "1",
-  orderNumber: "#ORD-2024-001",
-  customerName: "John Doe",
-  customerEmail: "john@example.com",
-  customerPhone: "+1 (555) 123-4567",
-  total: 299.99,
-  subtotal: 269.99,
-  shippingCost: 15.00,
-  taxAmount: 15.00,
-  discountAmount: 0,
-  status: "processing",
-  paymentStatus: "paid",
-  fulfillmentStatus: "unfulfilled",
-  paymentMethod: "Credit Card",
-  transactionId: "txn_1234567890",
-  trackingNumber: "",
-  carrier: "",
-  items: [
-    {
-      productId: "1",
-      productName: "Premium Cotton T-Shirt",
-      productImage: "/placeholder-product.jpg",
-      sku: "PCT-001",
-      quantity: 2,
-      price: 29.99,
-      total: 59.98
-    },
-    {
-      productId: "2",
-      productName: "Medical Scrub Set",
-      productImage: "/placeholder-product.jpg",
-      sku: "MSS-002",
-      quantity: 1,
-      price: 240.00,
-      total: 240.00
-    }
-  ],
-  shippingAddress: {
-    fullName: "John Doe",
-    addressLine1: "123 Main St",
-    addressLine2: "Apt 4B",
-    city: "New York",
-    state: "NY",
-    postalCode: "10001",
-    country: "USA",
-    phone: "+1 (555) 123-4567"
-  },
-  billingAddress: {
-    fullName: "John Doe",
-    addressLine1: "123 Main St",
-    addressLine2: "Apt 4B",
-    city: "New York",
-    state: "NY",
-    postalCode: "10001",
-    country: "USA",
-    phone: "+1 (555) 123-4567"
-  },
-  createdAt: "2024-01-15T10:30:00Z",
-  shippedAt: null as string | null,
-  deliveredAt: null as string | null,
-  customerNote: "Please leave at front door if not home",
-  internalNotes: [
-    {
-      $id: "1",
-      note: "Customer called about delivery time",
-      userId: "admin1",
-      userName: "Admin User",
-      createdAt: "2024-01-15T11:00:00Z"
-    }
-  ],
-  timeline: [
-    {
-      status: "pending",
-      changedBy: "System",
-      changedAt: "2024-01-15T10:30:00Z",
-      note: "Order placed"
-    },
-    {
-      status: "processing",
-      changedBy: "Admin User",
-      changedAt: "2024-01-15T10:35:00Z",
-      note: "Payment confirmed, processing order"
-    }
-  ]
+interface OrderItem {
+  product_id: string
+  product_name: string
+  sku: string
+  quantity: number
+  price: number
+  total: number
+}
+
+interface Address {
+  full_name: string
+  address_line1: string
+  address_line2?: string
+  city: string
+  state: string
+  postal_code: string
+  country: string
+  phone: string
+}
+
+interface Order {
+  $id: string
+  order_number: string
+  customer_name: string
+  customer_email: string
+  customer_phone?: string
+  total_amount: number
+  subtotal: number
+  shipping_amount: number
+  tax_amount: number
+  discount_amount: number
+  status: string
+  payment_status: string
+  fulfillment_status: string
+  payment_method: string
+  transaction_id?: string
+  tracking_number: string
+  carrier: string
+  items: string // JSON string
+  shipping_address: string // JSON string
+  billing_address: string // JSON string
+  notes: string
+  $createdAt: string
+  shipped_at?: string | null
+  delivered_at?: string | null
 }
 
 const statusColors = {
@@ -145,33 +104,62 @@ const statusColors = {
 export default function OrderDetailsPage() {
   const params = useParams()
   const router = useRouter()
-  const [isLoading, setIsLoading] = useState(false)
-  const [order, setOrder] = useState(mockOrder)
+  const [isLoading, setIsLoading] = useState(true)
+  const [order, setOrder] = useState<Order | null>(null)
   const [newNote, setNewNote] = useState("")
+  const [trackingNumber, setTrackingNumber] = useState("")
+  const [carrier, setCarrier] = useState("")
+
+  // Fetch order data
+  useEffect(() => {
+    const fetchOrder = async () => {
+      try {
+        const response = await fetch(`/api/admin/orders?orderId=${params.id}`)
+        const data = await response.json()
+        
+        if (data.order) {
+          setOrder(data.order)
+          setTrackingNumber(data.order.tracking_number || "")
+          setCarrier(data.order.carrier || "")
+        }
+      } catch (error) {
+        console.error("Failed to fetch order:", error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    if (params.id) {
+      fetchOrder()
+    }
+  }, [params.id])
 
   const updateOrderStatus = async (newStatus: string) => {
+    if (!order) return
+    
     setIsLoading(true)
     try {
-      // Here you would update the order status via Appwrite
-      console.log("Updating order status to:", newStatus)
+      const updateData: any = { status: newStatus }
+      
+      if (newStatus === 'shipped') {
+        updateData.shipped_at = new Date().toISOString()
+      }
+      if (newStatus === 'delivered') {
+        updateData.delivered_at = new Date().toISOString()
+      }
 
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000))
-
-      // Update local state
-      setOrder(prev => ({
-        ...prev,
-        status: newStatus as any,
-        timeline: [
-          ...prev.timeline,
-          {
-            status: newStatus,
-            changedBy: "Admin User",
-            changedAt: new Date().toISOString(),
-            note: `Status changed to ${newStatus}`
-          }
-        ]
-      }))
+      const response = await fetch(`/api/admin/orders?orderId=${order.$id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(updateData),
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        setOrder(data.order)
+      }
     } catch (error) {
       console.error("Error updating order:", error)
     } finally {
@@ -180,36 +168,33 @@ export default function OrderDetailsPage() {
   }
 
   const addTrackingNumber = async () => {
-    if (!order.trackingNumber || !order.carrier) {
+    if (!order || !trackingNumber || !carrier) {
       alert("Please enter both tracking number and carrier")
       return
     }
 
     setIsLoading(true)
     try {
-      // Here you would update the order with tracking info via Appwrite
-      console.log("Adding tracking:", order.trackingNumber, order.carrier)
-
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000))
-
-      // Update local state
-      setOrder(prev => ({
-        ...prev,
-        status: "shipped",
-        fulfillmentStatus: "fulfilled",
-        shippedAt: new Date().toISOString(),
-        deliveredAt: null as any,
-        timeline: [
-          ...prev.timeline,
-          {
-            status: "shipped",
-            changedBy: "Admin User",
-            changedAt: new Date().toISOString(),
-            note: `Shipped via ${order.carrier} - Tracking: ${order.trackingNumber}`
-          }
-        ]
-      }))
+      const response = await fetch(`/api/admin/orders?orderId=${order.$id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          tracking_number: trackingNumber,
+          carrier: carrier,
+          status: "shipped",
+          fulfillment_status: "fulfilled",
+          shipped_at: new Date().toISOString()
+        }),
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        setOrder(data.order)
+        setTrackingNumber(data.order.tracking_number || "")
+        setCarrier(data.order.carrier || "")
+      }
     } catch (error) {
       console.error("Error adding tracking:", error)
     } finally {
@@ -218,31 +203,65 @@ export default function OrderDetailsPage() {
   }
 
   const addInternalNote = async () => {
-    if (!newNote.trim()) return
+    if (!order || !newNote.trim()) return
 
     try {
-      // Here you would add the note via Appwrite
-      console.log("Adding note:", newNote)
+      const currentNotes = order.notes || ""
+      const timestamp = new Date().toISOString()
+      const noteEntry = `[${timestamp}] Admin: ${newNote}\n`
+      const updatedNotes = currentNotes + noteEntry
 
-      // Update local state
-      setOrder(prev => ({
-        ...prev,
-        internalNotes: [
-          ...prev.internalNotes,
-          {
-            $id: Date.now().toString(),
-            note: newNote,
-            userId: "admin1",
-            userName: "Admin User",
-            createdAt: new Date().toISOString()
-          }
-        ]
-      }))
-      setNewNote("")
+      const response = await fetch(`/api/admin/orders?orderId=${order.$id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ notes: updatedNotes }),
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        setOrder(data.order)
+        setNewNote("")
+      }
     } catch (error) {
       console.error("Error adding note:", error)
     }
   }
+
+  // Parse JSON fields
+  const parseJSON = (jsonString: string) => {
+    try {
+      return JSON.parse(jsonString)
+    } catch {
+      return null
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="p-6 flex items-center justify-center h-screen">
+        <p className="text-muted-foreground">Loading order details...</p>
+      </div>
+    )
+  }
+
+  if (!order) {
+    return (
+      <div className="p-6 flex items-center justify-center h-screen">
+        <p className="text-muted-foreground">Order not found</p>
+      </div>
+    )
+  }
+
+  const items: OrderItem[] = parseJSON(order.items) || []
+  const shippingAddress: Address = parseJSON(order.shipping_address) || {}
+  const billingAddress: Address = parseJSON(order.billing_address) || {}
+  const internalNotes = order.notes ? order.notes.split('\n').filter(n => n.trim()).map((note, idx) => ({
+    $id: idx.toString(),
+    note: note.replace(/^\[.*?\]\s*/, ''),
+    timestamp: note.match(/\[(.*?)\]/)?.[1] || ''
+  })) : []
 
   return (
     <div className="p-6 space-y-6">
@@ -255,7 +274,7 @@ export default function OrderDetailsPage() {
         </Button>
         <div className="flex-1">
           <h1 className="text-3xl font-bold tracking-tight">
-            Order {order.orderNumber}
+            Order {order.order_number}
           </h1>
           <p className="text-muted-foreground">
             Manage order details and fulfillment
@@ -293,22 +312,22 @@ export default function OrderDetailsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {order.items.map((item) => (
-                    <TableRow key={item.productId}>
+                  {items.map((item, idx) => (
+                    <TableRow key={item.product_id || idx}>
                       <TableCell>
                         <div className="flex items-center space-x-3">
                           <div className="h-10 w-10 rounded bg-gray-100 flex items-center justify-center">
                             <Package className="h-4 w-4" />
                           </div>
                           <div>
-                            <div className="font-medium">{item.productName}</div>
+                            <div className="font-medium">{item.product_name}</div>
                           </div>
                         </div>
                       </TableCell>
                       <TableCell>{item.sku}</TableCell>
                       <TableCell>{item.quantity}</TableCell>
-                      <TableCell>${item.price.toFixed(2)}</TableCell>
-                      <TableCell className="font-medium">${item.total.toFixed(2)}</TableCell>
+                      <TableCell>${Number(item.price || 0).toFixed(2)}</TableCell>
+                      <TableCell className="font-medium">${Number(item.total || 0).toFixed(2)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -318,62 +337,80 @@ export default function OrderDetailsPage() {
               <div className="mt-4 space-y-2">
                 <div className="flex justify-between text-sm">
                   <span>Subtotal:</span>
-                  <span>${order.subtotal.toFixed(2)}</span>
+                  <span>${Number(order.subtotal || 0).toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Shipping:</span>
-                  <span>${order.shippingCost.toFixed(2)}</span>
+                  <span>${Number(order.shipping_amount || 0).toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Tax:</span>
-                  <span>${order.taxAmount.toFixed(2)}</span>
+                  <span>${Number(order.tax_amount || 0).toFixed(2)}</span>
                 </div>
-                {order.discountAmount > 0 && (
+                {order.discount_amount > 0 && (
                   <div className="flex justify-between text-sm text-green-600">
                     <span>Discount:</span>
-                    <span>-${order.discountAmount.toFixed(2)}</span>
+                    <span>-${Number(order.discount_amount || 0).toFixed(2)}</span>
                   </div>
                 )}
                 <Separator />
                 <div className="flex justify-between font-medium">
                   <span>Total:</span>
-                  <span>${order.total.toFixed(2)}</span>
+                  <span>${Number(order.total_amount || 0).toFixed(2)}</span>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Timeline */}
+          {/* Order History */}
           <Card>
             <CardHeader>
-              <CardTitle>Order Timeline</CardTitle>
+              <CardTitle>Order History</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {order.timeline.map((event, index) => (
-                  <div key={index} className="flex items-start space-x-3">
+                <div className="flex items-start space-x-3">
+                  <div className="flex-shrink-0">
+                    <div className="w-2 h-2 bg-primary rounded-full mt-2"></div>
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-2">
+                      <Badge className={statusColors[order.status as keyof typeof statusColors]}>
+                        {order.status ? order.status.charAt(0).toUpperCase() + order.status.slice(1) : 'N/A'}
+                      </Badge>
+                    </div>
+                    <p className="text-sm mt-1">Current Status</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {new Date(order.$createdAt).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+                {order.shipped_at && (
+                  <div className="flex items-start space-x-3">
                     <div className="flex-shrink-0">
-                      <div className="w-2 h-2 bg-primary rounded-full mt-2"></div>
-                      {index < order.timeline.length - 1 && (
-                        <div className="w-px bg-border ml-1 h-8"></div>
-                      )}
+                      <div className="w-2 h-2 bg-purple-500 rounded-full mt-2"></div>
                     </div>
                     <div className="flex-1">
-                      <div className="flex items-center space-x-2">
-                        <Badge className={statusColors[event.status as keyof typeof statusColors]}>
-                          {event.status.charAt(0).toUpperCase() + event.status.slice(1)}
-                        </Badge>
-                        <span className="text-sm text-muted-foreground">
-                          by {event.changedBy}
-                        </span>
-                      </div>
-                      <p className="text-sm mt-1">{event.note}</p>
+                      <Badge className="bg-purple-100 text-purple-800">Shipped</Badge>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {new Date(event.changedAt).toLocaleString()}
+                        {new Date(order.shipped_at).toLocaleString()}
                       </p>
                     </div>
                   </div>
-                ))}
+                )}
+                {order.delivered_at && (
+                  <div className="flex items-start space-x-3">
+                    <div className="flex-shrink-0">
+                      <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
+                    </div>
+                    <div className="flex-1">
+                      <Badge className="bg-green-100 text-green-800">Delivered</Badge>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {new Date(order.delivered_at).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -391,14 +428,16 @@ export default function OrderDetailsPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               <div>
-                <p className="font-medium">{order.customerName}</p>
-                <p className="text-sm text-muted-foreground">{order.customerEmail}</p>
+                <p className="font-medium">{order.customer_name}</p>
+                <p className="text-sm text-muted-foreground">{order.customer_email}</p>
               </div>
 
-              <div className="flex items-center space-x-2">
-                <Phone className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm">{order.customerPhone}</span>
-              </div>
+              {order.customer_phone && (
+                <div className="flex items-center space-x-2">
+                  <Phone className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm">{order.customer_phone}</span>
+                </div>
+              )}
 
               <Button variant="outline" size="sm" className="w-full">
                 View Customer Profile
@@ -416,17 +455,17 @@ export default function OrderDetailsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-sm space-y-1">
-                <p className="font-medium">{order.shippingAddress.fullName}</p>
-                <p>{order.shippingAddress.addressLine1}</p>
-                {order.shippingAddress.addressLine2 && (
-                  <p>{order.shippingAddress.addressLine2}</p>
+                <p className="font-medium">{shippingAddress.full_name}</p>
+                <p>{shippingAddress.address_line1}</p>
+                {shippingAddress.address_line2 && (
+                  <p>{shippingAddress.address_line2}</p>
                 )}
                 <p>
-                  {order.shippingAddress.city}, {order.shippingAddress.state}{" "}
-                  {order.shippingAddress.postalCode}
+                  {shippingAddress.city}, {shippingAddress.state}{" "}
+                  {shippingAddress.postal_code}
                 </p>
-                <p>{order.shippingAddress.country}</p>
-                <p className="text-muted-foreground">{order.shippingAddress.phone}</p>
+                <p>{shippingAddress.country}</p>
+                <p className="text-muted-foreground">{shippingAddress.phone}</p>
               </div>
             </CardContent>
           </Card>
@@ -442,18 +481,18 @@ export default function OrderDetailsPage() {
             <CardContent className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-sm">Method:</span>
-                <span className="text-sm font-medium">{order.paymentMethod}</span>
+                <span className="text-sm font-medium">{order.payment_method || 'N/A'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-sm">Status:</span>
-                <Badge className={statusColors[order.paymentStatus as keyof typeof statusColors]}>
-                  {order.paymentStatus.charAt(0).toUpperCase() + order.paymentStatus.slice(1)}
+                <Badge className={statusColors[order.payment_status as keyof typeof statusColors]}>
+                  {order.payment_status ? order.payment_status.charAt(0).toUpperCase() + order.payment_status.slice(1) : 'N/A'}
                 </Badge>
               </div>
-              {order.transactionId && (
+              {order.transaction_id && (
                 <div className="flex justify-between">
                   <span className="text-sm">Transaction ID:</span>
-                  <span className="text-sm font-mono">{order.transactionId}</span>
+                  <span className="text-sm font-mono">{order.transaction_id}</span>
                 </div>
               )}
             </CardContent>
@@ -492,16 +531,16 @@ export default function OrderDetailsPage() {
                     <Input
                       id="tracking"
                       placeholder="Enter tracking number"
-                      value={order.trackingNumber}
-                      onChange={(e) => setOrder(prev => ({ ...prev, trackingNumber: e.target.value }))}
+                      value={trackingNumber}
+                      onChange={(e) => setTrackingNumber(e.target.value)}
                     />
                   </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="carrier">Carrier</Label>
                     <Select
-                      value={order.carrier}
-                      onValueChange={(value) => setOrder(prev => ({ ...prev, carrier: value }))}
+                      value={carrier}
+                      onValueChange={(value) => setCarrier(value)}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Select carrier" />
@@ -538,14 +577,18 @@ export default function OrderDetailsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-3">
-                {order.internalNotes.map((note) => (
-                  <div key={note.$id} className="p-3 bg-muted rounded-lg">
-                    <p className="text-sm">{note.note}</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {note.userName} • {new Date(note.createdAt).toLocaleString()}
-                    </p>
-                  </div>
-                ))}
+                {internalNotes.length > 0 ? (
+                  internalNotes.map((note) => (
+                    <div key={note.$id} className="p-3 bg-muted rounded-lg">
+                      <p className="text-sm">{note.note}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {note.timestamp ? new Date(note.timestamp).toLocaleString() : 'Unknown time'}
+                      </p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">No notes yet</p>
+                )}
               </div>
 
               <div className="space-y-2">

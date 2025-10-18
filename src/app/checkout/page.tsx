@@ -224,9 +224,11 @@ export default function CheckoutPage() {
       // Prepare order input for OrderRepository
       const orderInput = {
         customer_id: userId,
+        email: data.email,
         brand_id, // Include brand_id for admin filtering
         items: cart.map(item => ({
           productId: item.$id,
+          name: item.name,
           sku: (item as any).sku || item.$id.substring(0, 8),
           quantity: item.quantity,
           price: item.discount_price > 0 ? item.discount_price : item.price,

@@ -9,6 +9,7 @@ const ORDERS_COLLECTION_ID = 'orders'
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
+    const orderId = searchParams.get("orderId")
     const search = searchParams.get("search") || ""
     const limit = parseInt(searchParams.get("limit") || "100")
     const offset = parseInt(searchParams.get("offset") || "0")
@@ -18,6 +19,12 @@ export async function GET(request: NextRequest) {
 
     // Create admin client
     const { databases } = await createAdminClient()
+
+    // If orderId is provided, fetch single order
+    if (orderId) {
+      const order = await databases.getDocument(DATABASE_ID, ORDERS_COLLECTION_ID, orderId)
+      return NextResponse.json({ order })
+    }
 
     // Build queries
     const queries = [
@@ -58,7 +65,7 @@ export async function GET(request: NextRequest) {
       delivered: orders.filter(o => o.status === "delivered").length,
       totalRevenue: orders
         .filter(o => o.payment_status === "paid")
-        .reduce((sum, o) => sum + (o.total || 0), 0)
+        .reduce((sum, o) => sum + (o.total_amount || 0), 0)
     }
 
     return NextResponse.json({
@@ -117,6 +124,7 @@ export async function POST(request: NextRequest) {
       billing_address: JSON.stringify(orderData.billing_address || orderData.shipping_address),
       notes: orderData.notes || '',
       tracking_number: orderData.tracking_number || '',
+      carrier: orderData.carrier || '',
       shipped_at: orderData.shipped_at || null,
       delivered_at: orderData.delivered_at || null
     }
@@ -158,7 +166,7 @@ export async function PATCH(request: NextRequest) {
 
     // Prepare update data (only include fields that are provided)
     const allowedFields = [
-      'status', 'payment_status', 'fulfillment_status', 'tracking_number', 
+      'status', 'payment_status', 'fulfillment_status', 'tracking_number', 'carrier',
       'notes', 'shipped_at', 'delivered_at', 'customer_name', 'customer_email'
     ]
     const filteredUpdateData: any = {}

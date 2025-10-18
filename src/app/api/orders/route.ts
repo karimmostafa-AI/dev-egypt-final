@@ -128,15 +128,55 @@ export const POST = async (request: NextRequest) => {
     const mappedPaymentMethod = paymentMethodMap[paymentMethod] || 'cash';
     
     const orderData = {
+      order_number: order_code,
       order_code,
       customer_id: customerId || 'guest',
+      customer_name: shippingAddress.fullName || 'Guest',
+      customer_email: body.email || '',
       brand_id: brand_id || '', // Brand ID for filtering orders by brand
+      items: JSON.stringify(items.map(item => ({
+        product_id: item.productId,
+        product_name: item.name || item.productName || '',
+        sku: item.sku || '',
+        quantity: item.quantity,
+        price: item.price,
+        total: item.price * item.quantity
+      }))),
       total_amount: totalAmount, // Total order amount
+      subtotal: calculatedSubtotal,
+      shipping_amount: shippingCost,
+      tax_amount: taxAmount,
+      discount_amount: discountAmount,
       payable_amount: totalAmount, // Amount customer needs to pay
       discount: discountAmount,
+      status: 'pending', // Order status: pending, processing, shipped, delivered, cancelled
       order_status: 'pending', // Order status: pending, processing, confirmed, shipped, delivered, cancelled, returned
       payment_status: 'unpaid', // Payment status: paid, unpaid (default for COD), pending, refunded, failed
-      payment_method: mappedPaymentMethod
+      fulfillment_status: 'unfulfilled', // Fulfillment status: unfulfilled, partial, fulfilled, cancelled
+      payment_method: mappedPaymentMethod,
+      shipping_address: JSON.stringify({
+        full_name: shippingAddress.fullName,
+        address_line1: shippingAddress.addressLine1,
+        address_line2: shippingAddress.addressLine2 || '',
+        city: shippingAddress.city,
+        state: shippingAddress.state,
+        postal_code: shippingAddress.postalCode,
+        country: shippingAddress.country,
+        phone: shippingAddress.phone
+      }),
+      billing_address: JSON.stringify({
+        full_name: billingAddress.fullName,
+        address_line1: billingAddress.addressLine1,
+        address_line2: billingAddress.addressLine2 || '',
+        city: billingAddress.city,
+        state: billingAddress.state,
+        postal_code: billingAddress.postalCode,
+        country: billingAddress.country,
+        phone: billingAddress.phone
+      }),
+      notes: customerNote || '',
+      tracking_number: '',
+      carrier: ''
     };
 
     // Create order in Appwrite database

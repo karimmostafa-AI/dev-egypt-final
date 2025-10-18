@@ -167,11 +167,16 @@ export default function OrdersPage() {
 
   // Filter orders based on search and filters
   const filteredOrders = orders.filter((order) => {
-    const matchesSearch = order.order_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         order.customer_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         order.customer_email.toLowerCase().includes(searchTerm.toLowerCase())
+    if (!searchTerm) return true;
     
-    return matchesSearch
+    const searchLower = searchTerm.toLowerCase();
+    const orderCode = order.order_code?.toLowerCase() || '';
+    const customerId = order.customer_id?.toLowerCase() || '';
+    
+    const matchesSearch = orderCode.includes(searchLower) ||
+                         customerId.includes(searchLower);
+    
+    return matchesSearch;
   })
 
   const parseItems = (itemsJson: string) => {
@@ -359,24 +364,24 @@ export default function OrdersPage() {
                           <div className="text-sm text-muted-foreground">{order.customer_email}</div>
                         </TableCell>
                         <TableCell>
-                          <div className="font-medium">${order.total.toFixed(2)}</div>
+                          <div className="font-medium">${Number(order.total_amount ?? 0).toFixed(2)}</div>
                           <div className="text-sm text-muted-foreground">
                             {parseItems(order.items).length} items
                           </div>
                         </TableCell>
                         <TableCell>
                           <Badge className={statusColors[order.status as keyof typeof statusColors] || "bg-gray-100 text-gray-800"}>
-                            {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                            {order.status ? order.status.charAt(0).toUpperCase() + order.status.slice(1) : 'N/A'}
                           </Badge>
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className={paymentStatusColors[order.payment_status as keyof typeof paymentStatusColors] || "bg-gray-100 text-gray-800"}>
-                            {order.payment_status.charAt(0).toUpperCase() + order.payment_status.slice(1)}
+                            {order.payment_status ? order.payment_status.charAt(0).toUpperCase() + order.payment_status.slice(1) : 'N/A'}
                           </Badge>
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className={fulfillmentStatusColors[order.fulfillment_status as keyof typeof fulfillmentStatusColors] || "bg-gray-100 text-gray-800"}>
-                            {order.fulfillment_status.charAt(0).toUpperCase() + order.fulfillment_status.slice(1)}
+                            {order.fulfillment_status ? order.fulfillment_status.charAt(0).toUpperCase() + order.fulfillment_status.slice(1) : 'N/A'}
                           </Badge>
                         </TableCell>
                         <TableCell>
