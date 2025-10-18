@@ -337,15 +337,86 @@ export default function ProductDetailPage() {
 
     // If we have images array from ProductRepository
     if (product.images && Array.isArray(product.images) && product.images.length > 0) {
-      product.images.forEach((img: any, index: number) => {
-        images.push({
-          src: img.url || img.image_url,
-          alt: img.alt_text || `${product.name} - view ${index + 1}`,
-          color: img.variation_value || img.variation_id || undefined,
-          isMain: img.image_type === 'main',
-          imageType: img.image_type
-        });
+      // Deduplicate images by URL to avoid showing same image for each size variation
+      const seenUrls = new Set<string>();
+      const uniqueImages: any[] = [];
+      
+      // First, add main front and back images (no variation_id)
+      const mainImages = product.images.filter((img: any) => 
+        !img.variation_id || img.variation_id === '' ||
+        img.image_type === 'front' || img.image_type === 'back'
+      );
+      
+      mainImages.forEach((img: any) => {
+        const url = img.url || img.image_url;
+        if (!seenUrls.has(url)) {
+          seenUrls.add(url);
+          uniqueImages.push(img);
+        }
       });
+      
+      // Then, add gallery images (deduplicated by URL)
+      const galleryImages = product.images.filter((img: any) => 
+        img.image_type === 'gallery' && img.variation_id
+      );
+      
+      galleryImages.forEach((img: any) => {
+        const url = img.url || img.image_url;
+        if (!seenUrls.has(url)) {
+          seenUrls.add(url);
+          uniqueImages.push(img);
+        }
+      });
+      
+      // Convert to image array format
+      uniqueImages.forEach((img: any, index: number) => {
+        // Extract color from variation if available
+        let colorValue = img.variation_value;
+        
+        if (!colorValue && img.variation_id && product.variations) {
+          // Try exact match first
+          let variation = product.variations.find((v: any) => v.id === img.variation_id);
+          
+          // If no exact match, try matching variations that start with this ID (handles synthetic IDs with suffixes)
+          if (!variation) {
+            variation = product.variations.find((v: any) => 
+              v.id && v.id.startsWith(img.variation_id) && v.variation_type === 'color'
+            );
+          }
+          
+          // If found a color variation, use its value
+          if (variation && variation.variation_type === 'color') {
+            colorValue = variation.variation_value;
+          }
+          // Otherwise extract from SKU
+          else if (variation && variation.sku) {
+            const skuParts = variation.sku.split('-');
+            if (skuParts.length >= 2) {
+              colorValue = skuParts[1];
+            }
+          }
+        }
+        
+        const imageObj = {
+          src: img.url || img.image_url,
+          alt: img.alt_text || `${product.name} - ${img.image_type} view ${index + 1}`,
+          color: colorValue || undefined,
+          isMain: img.image_type === 'front' || img.image_type === 'main',
+          imageType: img.image_type
+        };
+        
+        console.log(`🖼️ Image ${index + 1}:`, {
+          type: img.image_type,
+          hasVariationId: !!img.variation_id,
+          detectedColor: colorValue,
+          url: imageObj.src.substring(imageObj.src.lastIndexOf('/') - 30)
+        });
+        
+        images.push(imageObj);
+      });
+      
+      console.log('✅ Filtered to unique images:', images.length, 'images from', product.images.length, 'original images');
+      console.log('📊 Final images array:', images.map(i => ({ type: i.imageType, color: i.color, isMain: i.isMain })));
     } else if (isUsingStaticData) {
       // For static products, create images for each color
       const colors = (product as Product).colorOptions?.split(',') || ['Royal', 'Navy', 'Black'];

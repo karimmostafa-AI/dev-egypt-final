@@ -136,13 +136,28 @@ export const ProductImageGallery: React.FC<ProductImageGalleryProps> = ({
 
   // Determine which image to show based on current index
   const currentImage = useMemo(() => {
+    console.log('🖼️ Gallery state:', { 
+      currentIndex: imageState.currentIndex, 
+      displayImagesCount: displayImages.length,
+      thumbnailsCount: thumbnails.length,
+      hasDisplayImages: displayImages && displayImages.length > 0
+    });
+    
+    // If we have displayImages, use them directly (simple mode)
+    if (displayImages && displayImages.length > 0) {
+      const img = displayImages[imageState.currentIndex] || displayImages[0];
+      console.log('✅ Using displayImage at index', imageState.currentIndex, ':', img?.src?.substring(img.src.lastIndexOf('/') - 30));
+      return img;
+    }
+    // Otherwise use color-based logic (legacy mode)
+    console.log('⚠️ Falling back to legacy mode');
     if (imageState.currentIndex === 0 && currentColorImages.main) {
       return currentColorImages.main;
     } else if (imageState.currentIndex === 1 && currentColorImages.back) {
       return currentColorImages.back;
     }
     return thumbnails[imageState.currentIndex] || currentColorImages.main;
-  }, [imageState.currentIndex, currentColorImages, thumbnails]);
+  }, [imageState.currentIndex, displayImages, currentColorImages, thumbnails]);
 
   // Helper function to get image properties
   const getImageProps = (image: ProductImage | null) => {
@@ -194,20 +209,24 @@ export const ProductImageGallery: React.FC<ProductImageGalleryProps> = ({
   }, []);
 
   const handlePrevious = useCallback(() => {
+    const totalImages = displayImages.length || thumbnails.length;
+    console.log('⬅️ Previous clicked:', { currentIndex: imageState.currentIndex, totalImages, newIndex: imageState.currentIndex > 0 ? imageState.currentIndex - 1 : totalImages - 1 });
     setImageState(prev => ({
       ...prev,
-      currentIndex: prev.currentIndex > 0 ? prev.currentIndex - 1 : thumbnails.length - 1,
+      currentIndex: prev.currentIndex > 0 ? prev.currentIndex - 1 : totalImages - 1,
       isLoading: true
     }));
-  }, [thumbnails.length]);
+  }, [displayImages.length, thumbnails.length, imageState.currentIndex]);
 
   const handleNext = useCallback(() => {
+    const totalImages = displayImages.length || thumbnails.length;
+    console.log('➡️ Next clicked:', { currentIndex: imageState.currentIndex, totalImages, newIndex: imageState.currentIndex < totalImages - 1 ? imageState.currentIndex + 1 : 0 });
     setImageState(prev => ({
       ...prev,
-      currentIndex: prev.currentIndex < thumbnails.length - 1 ? prev.currentIndex + 1 : 0,
+      currentIndex: prev.currentIndex < totalImages - 1 ? prev.currentIndex + 1 : 0,
       isLoading: true
     }));
-  }, [thumbnails.length]);
+  }, [displayImages.length, thumbnails.length, imageState.currentIndex]);
 
   // Get unique colors for color selector
   const uniqueColors = useMemo(() => {
@@ -225,9 +244,9 @@ export const ProductImageGallery: React.FC<ProductImageGalleryProps> = ({
   return (
     <div className={`flex gap-4 ${className}`}>
       {/* Left Side - Thumbnail Gallery */}
-      {showThumbnails && thumbnails.length > 0 && (
+      {showThumbnails && displayImages.length > 0 && (
         <div className="flex flex-col gap-2 w-20">
-          {thumbnails.slice(0, maxThumbnails).map((thumbnail, index) => (
+          {displayImages.slice(0, maxThumbnails).map((thumbnail, index) => (
             <button
               key={`thumb-${index}`}
               onClick={() => handleThumbnailClick(index)}
@@ -284,6 +303,7 @@ export const ProductImageGallery: React.FC<ProductImageGalleryProps> = ({
               </div>
             ) : currentImage ? (
               <LazyImage
+                key={`main-image-${imageState.currentIndex}-${getImageProps(currentImage).src}`}
                 src={getImageProps(currentImage).src}
                 alt={getImageProps(currentImage).alt}
                 width={454}
@@ -297,7 +317,7 @@ export const ProductImageGallery: React.FC<ProductImageGalleryProps> = ({
             ) : null}
 
             {/* Navigation Arrows */}
-            {thumbnails.length > 1 && !imageState.hasError && (
+            {displayImages.length > 1 && !imageState.hasError && (
               <>
                 <button
                   onClick={handlePrevious}
@@ -322,9 +342,9 @@ export const ProductImageGallery: React.FC<ProductImageGalleryProps> = ({
 
             {/* Image Counter & Type Badge */}
             <div className="absolute top-2 right-2 flex gap-2">
-              {thumbnails.length > 1 && (
+              {displayImages.length > 1 && (
                 <div className="bg-black/50 text-white text-xs px-2 py-1 rounded">
-                  {imageState.currentIndex + 1} / {thumbnails.length}
+                  {imageState.currentIndex + 1} / {displayImages.length}
                 </div>
               )}
               {imageState.currentIndex === 0 && (
