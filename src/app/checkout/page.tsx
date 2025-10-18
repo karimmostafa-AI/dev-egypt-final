@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useForm } from 'react-hook-form';
@@ -8,6 +8,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import MainLayout from '../../components/MainLayout';
 import { useCart } from '../../context/CartContext';
+import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -39,14 +40,14 @@ const checkoutSchema = z.object({
     country: z.string().min(1, 'Country is required'),
   }),
 
-  // Billing Address
+  // Billing Address - optional when sameAsBilling is true
   billingAddress: z.object({
-    addressLine1: z.string().min(1, 'Address is required'),
+    addressLine1: z.string(),
     addressLine2: z.string().optional(),
-    city: z.string().min(1, 'City is required'),
-    state: z.string().min(1, 'State is required'),
-    postalCode: z.string().min(5, 'Please enter a valid postal code'),
-    country: z.string().min(1, 'Country is required'),
+    city: z.string(),
+    state: z.string(),
+    postalCode: z.string(),
+    country: z.string(),
   }),
 
   // Payment
@@ -58,30 +59,42 @@ const checkoutSchema = z.object({
   acceptTerms: z.boolean().refine(val => val === true, {
     message: 'You must accept the terms and conditions',
   }),
-});
+}).refine(
+  (data) => {
+    // If sameAsBilling is false, validate billing address fields
+    if (!data.sameAsBilling) {
+      return (
+        data.billingAddress.addressLine1.length > 0 &&
+        data.billingAddress.city.length > 0 &&
+        data.billingAddress.state.length > 0 &&
+        data.billingAddress.postalCode.length >= 5 &&
+        data.billingAddress.country.length > 0
+      );
+    }
+    return true;
+  },
+  {
+    message: 'Please fill in all required billing address fields',
+    path: ['billingAddress'],
+  }
+);
 
 type CheckoutFormData = z.infer<typeof checkoutSchema>;
 
 export default function CheckoutPage() {
   const router = useRouter();
   const { cart, getCartTotal, getCartCount, clearCart } = useCart();
+  const { auth } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderComplete, setOrderComplete] = useState(false);
   const [orderId, setOrderId] = useState<string>('');
-  const [isGuestCheckout, setIsGuestCheckout] = useState(true);
+  const [orderCode, setOrderCode] = useState<string>('');
 
-  // Helper function to determine if media_id is a URL or file ID
-  const getImageSrc = (mediaId: string) => {
-    // Check if it's a URL (starts with http:// or https://)
-    if (mediaId.startsWith('http://') || mediaId.startsWith('https://')) {
-      return mediaId;
-    }
-    // Otherwise, treat it as a file ID in the public directory
-    return `/uploads/images/${mediaId}`;
-  };
-
+  // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
   const form = useForm<CheckoutFormData>({
     resolver: zodResolver(checkoutSchema) as any,
+    mode: 'onChange', // Validate on change
+    reValidateMode: 'onChange', // Re-validate on change
     defaultValues: {
       email: '',
       firstName: '',
@@ -118,6 +131,44 @@ export default function CheckoutPage() {
   const tax = subtotal * 0.08; // 8% tax
   const total = subtotal + shipping + tax;
 
+  // AUTHENTICATION GUARD: Redirect to login if not authenticated
+  useEffect(() => {
+    if (!auth.isLoading && !auth.isAuthenticated) {
+      // Store current page as redirect target
+      router.push('/login?redirect=/checkout');
+    }
+  }, [auth.isLoading, auth.isAuthenticated, router]);
+
+  // Helper function to determine if media_id is a URL or file ID
+  const getImageSrc = (mediaId: string) => {
+    // Check if it's a URL (starts with http:// or https://)
+    if (mediaId.startsWith('http://') || mediaId.startsWith('https://')) {
+      return mediaId;
+    }
+    // Otherwise, treat it as a file ID in the public directory
+    return `/uploads/images/${mediaId}`;
+  };
+
+  // NOW CONDITIONAL RETURNS ARE SAFE
+  // Show loading while checking authentication
+  if (auth.isLoading) {
+    return (
+      <MainLayout>
+        <div className="min-h-screen bg-gray-50 py-12">
+          <div className="max-w-2xl mx-auto px-4 text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#173a6a] mx-auto mb-4"></div>
+            <p className="text-gray-600">Checking authentication...</p>
+          </div>
+        </div>
+      </MainLayout>
+    );
+  }
+
+  // Don't render checkout if not authenticated
+  if (!auth.isAuthenticated) {
+    return null;
+  }
+
   // Redirect if cart is empty
   if (cart.length === 0 && !orderComplete) {
     return (
@@ -140,64 +191,104 @@ export default function CheckoutPage() {
   }
 
   const onSubmit = async (data: CheckoutFormData) => {
+    console.log('\ud83d\udc40 Form submitted!', data);
+    console.log('\ud83d\udc64 Auth user:', auth.user);
+    console.log('\ud83d\udce6 Same as billing:', data.sameAsBilling);
+    
+    // Ensure user is authenticated (use .id property from auth.user)
+    const userId = auth.user?.id || auth.user?.$id;
+    if (!userId) {
+      console.error('\u274c User not authenticated');
+      toast.error('You must be logged in to place an order');
+      router.push('/login?redirect=/checkout');
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      // Prepare order data
-      const orderData = {
-        customerId: 'guest', // This would be the actual user ID if logged in
+      console.log('🛒 Starting order submission for user:', userId);
+
+      // Use shipping address for billing if sameAsBilling is checked
+      const billingAddressData = data.sameAsBilling 
+        ? data.shippingAddress 
+        : data.billingAddress;
+
+      console.log('📦 Using billing address:', billingAddressData);
+
+      // Extract brand_id from first cart item (orders can contain products from multiple brands)
+      // If you need to filter by all brands in an order, consider storing all brand_ids
+      const brand_id = cart.length > 0 ? cart[0].brand_id : '';
+      console.log('🏷️ Order brand_id:', brand_id);
+
+      // Prepare order input for OrderRepository
+      const orderInput = {
+        customer_id: userId,
+        brand_id, // Include brand_id for admin filtering
         items: cart.map(item => ({
           productId: item.$id,
           sku: (item as any).sku || item.$id.substring(0, 8),
           quantity: item.quantity,
           price: item.discount_price > 0 ? item.discount_price : item.price,
+          brand_id: item.brand_id, // Also store brand per item
         })),
         shippingAddress: {
           fullName: `${data.firstName} ${data.lastName}`,
-          ...data.shippingAddress,
+          addressLine1: data.shippingAddress.addressLine1,
+          addressLine2: data.shippingAddress.addressLine2,
+          city: data.shippingAddress.city,
+          state: data.shippingAddress.state,
+          postalCode: data.shippingAddress.postalCode,
+          country: data.shippingAddress.country,
           phone: data.phone,
         },
-        billingAddress: data.sameAsBilling 
-          ? {
-              fullName: `${data.firstName} ${data.lastName}`,
-              ...data.shippingAddress,
-              phone: data.phone,
-            }
-          : {
-              fullName: `${data.firstName} ${data.lastName}`,
-              ...data.billingAddress,
-              phone: data.phone,
-            },
-        customerNote: data.customerNote,
+        billingAddress: {
+          fullName: `${data.firstName} ${data.lastName}`,
+          addressLine1: billingAddressData.addressLine1,
+          addressLine2: billingAddressData.addressLine2,
+          city: billingAddressData.city,
+          state: billingAddressData.state,
+          postalCode: billingAddressData.postalCode,
+          country: billingAddressData.country,
+          phone: data.phone,
+        },
         paymentMethod: data.paymentMethod,
-        paymentStatus: 'pending', // Cash on delivery orders start as pending
+        subtotal: subtotal,
         shippingCost: shipping,
         taxAmount: tax,
         discountAmount: 0,
+        customerNote: data.customerNote,
       };
 
-      // Submit order to API
+      console.log('📝 Order input prepared, submitting to server...');
+
+      // Create order via server-side API route
       const response = await fetch('/api/orders', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(orderData),
+        body: JSON.stringify(orderInput),
       });
 
-      const result = await response.json();
-
-      if (result.success) {
-        setOrderId(result.order.id || result.order.$id || 'ORD-' + Date.now());
-        setOrderComplete(true);
-        clearCart();
-        toast.success('Order placed successfully!');
-      } else {
-        throw new Error(result.error || 'Failed to place order');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create order');
       }
+
+      const { order } = await response.json();
+      console.log('✅ Order created successfully:', order.id);
+      console.log('🏷️ Order code for tracking:', order.order_code);
+
+      // Set order details for confirmation screen
+      setOrderId(order.id || order.$id || '');
+      setOrderCode(order.order_code);
+      setOrderComplete(true);
+      clearCart();
+      toast.success('Order placed successfully!');
     } catch (error) {
-      console.error('Error placing order:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to place order');
+      console.error('❌ Error placing order:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to place order. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -218,7 +309,8 @@ export default function CheckoutPage() {
                 </p>
                 <div className="bg-gray-50 rounded-lg p-4 mb-6">
                   <p className="text-sm text-gray-600">Order Number</p>
-                  <p className="text-lg font-mono font-bold text-gray-900">{orderId}</p>
+                  <p className="text-lg font-mono font-bold text-gray-900">{orderCode || orderId}</p>
+                  <p className="text-xs text-gray-500 mt-2">ID: {orderId}</p>
                 </div>
                 <div className="space-y-3">
                   <Button 
@@ -257,60 +349,33 @@ export default function CheckoutPage() {
               Back to Cart
             </Link>
             <h1 className="text-3xl font-bold text-gray-900">Checkout</h1>
-
-            {/* Guest vs Account Toggle */}
-            <div className="mt-6 bg-white rounded-lg border p-4 max-w-md">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className={`p-2 rounded-full ${isGuestCheckout ? 'bg-[#173a6a] text-white' : 'bg-gray-100 text-gray-600'}`}>
-                    <User className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="font-medium text-gray-900">Guest Checkout</p>
-                    <p className="text-sm text-gray-600">Quick and easy - no account needed</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setIsGuestCheckout(!isGuestCheckout)}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                    isGuestCheckout ? 'bg-[#173a6a]' : 'bg-gray-200'
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      isGuestCheckout ? 'translate-x-6' : 'translate-x-1'
-                    }`}
-                  />
-                </button>
-                <div className="flex items-center gap-3">
-                  <div className={`p-2 rounded-full ${!isGuestCheckout ? 'bg-[#173a6a] text-white' : 'bg-gray-100 text-gray-600'}`}>
-                    <UserCheck className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="font-medium text-gray-900">Account</p>
-                    <p className="text-sm text-gray-600">Sign in for faster checkout</p>
-                  </div>
-                </div>
-              </div>
-
-              {!isGuestCheckout && (
-                <div className="mt-4 pt-4 border-t border-gray-200">
-                  <button className="w-full bg-gray-100 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors">
-                    Sign In to Your Account
-                  </button>
-                  <p className="text-xs text-gray-600 text-center mt-2">
-                    New customer?{' '}
-                    <Link href="/register" className="text-[#173a6a] hover:underline">
-                      Create an account
-                    </Link>
-                  </p>
-                </div>
-              )}
-            </div>
+            <p className="text-gray-600 mt-2">
+              Complete your order - You're signed in as{' '}
+              <span className="font-medium text-gray-900">{auth.user?.email || 'Customer'}</span>
+            </p>
           </div>
 
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <form 
+              onSubmit={(e) => {
+                console.log('\ud83d\udc49 Form submit event triggered');
+                console.log('\ud83d\udcdd Form errors:', form.formState.errors);
+                console.log('\u2705 Form is valid:', form.formState.isValid);
+                console.log('\ud83d\udce6 Form values:', form.getValues());
+                
+                // Show which fields are invalid
+                const errors = form.formState.errors;
+                if (Object.keys(errors).length > 0) {
+                  console.error('\u274c Invalid fields:', Object.keys(errors));
+                  Object.entries(errors).forEach(([field, error]: [string, any]) => {
+                    console.error(`  - ${field}:`, error?.message || error);
+                  });
+                }
+                
+                form.handleSubmit(onSubmit)(e);
+              }} 
+              className="grid grid-cols-1 lg:grid-cols-3 gap-8"
+            >
               {/* Main Form */}
               <div className="lg:col-span-2 space-y-8">
                 {/* Customer Information */}
@@ -322,24 +387,6 @@ export default function CheckoutPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    {isGuestCheckout && (
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                        <div className="flex items-start gap-3">
-                          <div className="w-5 h-5 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                            <span className="text-blue-600 text-xs">ℹ</span>
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium text-blue-900 mb-1">
-                              Guest Checkout
-                            </p>
-                            <p className="text-sm text-blue-700">
-                              You're checking out as a guest. No account needed! We'll send order updates to your email.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
                     <FormField
                       control={form.control}
                       name="email"

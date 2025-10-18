@@ -1,9 +1,9 @@
 'use client';
 import { useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import BreadCrumb from '../../../components/ui/BreadCrumb';
 import EditText from '../../../components/ui/EditText';
 import { useAuth } from '../../hooks/useAuth';
-import { useRouter } from 'next/navigation';
 import MainLayout from '@/components/MainLayout';
 
 interface FormData {
@@ -15,6 +15,7 @@ interface FormData {
 
 export default function RegisterPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { register, auth } = useAuth();
   const [formData, setFormData] = useState<FormData>({
     name: '',
@@ -26,6 +27,9 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Get redirect URL from search params
+  const redirectTo = searchParams.get('redirect') || '/';
 
   const handleInputChange = (field: keyof FormData, value: string | boolean) => {
     setFormData(prev => ({
@@ -58,9 +62,9 @@ export default function RegisterPage() {
       setError(null);
       await register(formData.email, formData.password, formData.name);
 
-      // Redirect to home page on successful registration
+      // Redirect to specified page or home after successful registration
       if (!auth.error) {
-        router.push('/');
+        router.push(redirectTo);
       }
     } catch (err) {
       setError('Registration failed. Please try again.');

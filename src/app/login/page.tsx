@@ -224,7 +224,10 @@ export default function LoginPage() {
               <div className="mt-6 text-center">
                 <p className="text-sm text-gray-600">
                   Don't have an account?{' '}
-                  <Link href="/register" className="text-[#173a6a] hover:underline font-medium">
+                  <Link 
+                    href={`/register${redirectTo !== '/' ? `?redirect=${redirectTo}` : ''}`}
+                    className="text-[#173a6a] hover:underline font-medium"
+                  >
                     Create one here
                   </Link>
                 </p>
