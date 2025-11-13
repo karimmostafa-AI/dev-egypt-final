@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import { Query } from "node-appwrite"
 import { createAdminClient } from "@/lib/appwrite-admin"
+import { withAdminAuth } from "@/lib/admin-middleware"
 
 // Get database ID from environment
 const DATABASE_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || ''
 const ORDERS_COLLECTION_ID = 'orders'
 
-export async function GET(request: NextRequest) {
+export const GET = withAdminAuth(async (request: NextRequest) => {
   try {
     const { searchParams } = new URL(request.url)
     const orderId = searchParams.get("orderId")
@@ -81,7 +82,7 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 export async function POST(request: NextRequest) {
   try {

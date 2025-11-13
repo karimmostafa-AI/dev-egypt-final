@@ -40,6 +40,7 @@ const ProductSchema = z.object({
   units: z.number().optional(),
   mainImage: z.string().optional(),
   backImage: z.string().optional(),
+  sizeGuideImage: z.string().optional(),
   galleryImages: z.preprocess((val) => {
     if (typeof val === 'string') {
       try { return JSON.parse(val) } catch { return [] }
@@ -244,10 +245,11 @@ export async function POST(request: NextRequest) {
 
     const product_id = product.$id
 
-    // Images (main/back/gallery)
+    // Images (main/back/sizeGuide/gallery)
     console.log('📷 Image data received:', {
       mainImage: data.mainImage ? 'present' : 'missing',
       backImage: data.backImage ? 'present' : 'missing',
+      sizeGuideImage: data.sizeGuideImage ? 'present' : 'missing',
       galleryImages: data.galleryImages?.length || 0,
       variations: data.variations?.length || 0
     })
@@ -283,6 +285,21 @@ export async function POST(request: NextRequest) {
           alt_text: `${data.name} back view`,
           is_primary: false,
           sort_order: 2,
+        })
+      )
+
+    // Size Guide Image (required)
+    if (data.sizeGuideImage)
+      imageOps.push(
+        addImage({
+          product_id,
+          variation_id: "",
+          image_type: "size_guide",
+          image_url: data.sizeGuideImage,
+          image_id: `img_${product_id}_size_guide`,
+          alt_text: `${data.name} size guide`,
+          is_primary: false,
+          sort_order: 3,
         })
       )
 
