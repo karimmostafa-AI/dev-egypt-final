@@ -7,6 +7,7 @@ import { CartProvider } from "../context/CartContext";
 import { LocationProvider } from "../contexts/LocationContext";
 import { ReactQueryProvider } from "../lib/react-query-provider";
 import { usePerformanceMonitoring } from "../lib/performance-optimization-service";
+import { LiveVisitorTracker } from "@/components/LiveVisitorTracker";
 
 const roboto = Roboto({
   weight: ["400"],
@@ -39,6 +40,7 @@ export default function RootLayout({
             <LocationProvider>
               <CartProvider>
                 {children}
+                <LiveVisitorTracker />
               </CartProvider>
             </LocationProvider>
           </AuthProvider>

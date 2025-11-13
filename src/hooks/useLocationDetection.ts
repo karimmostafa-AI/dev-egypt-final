@@ -29,6 +29,20 @@ const DEFAULT_LOCATION: LocationData = {
   timezone: 'America/New_York'
 };
 
+// Make geolocation errors readable in environments that JSON-serialize console args (e.g. dev overlays)
+function formatGeoError(error: unknown): string {
+  if (!error) return 'Unknown error';
+  if (typeof error === 'string') return error;
+  if (typeof error === 'object') {
+    const anyErr = error as any;
+    const name = anyErr?.name ?? 'Error';
+    const message = anyErr?.message ?? '';
+    const code = typeof anyErr?.code !== 'undefined' ? ` code=${anyErr.code}` : '';
+    return `${name}${code}${message ? `: ${message}` : ''}`;
+  }
+  try { return String(error); } catch { return 'Unprintable error'; }
+}
+
 export function useLocationDetection() {
   const [state, setState] = useState<LocationState>({
     location: null,
@@ -112,11 +126,41 @@ export function useLocationDetection() {
 
   // Detect location via browser geolocation
   const detectLocationByBrowser = useCallback(async (): Promise<LocationData | null> => {
-    return new Promise((resolve) => {
+    return new Promise(async (resolve) => {
+      // Geolocation requires a secure context (HTTPS or localhost)
+      if (typeof window !== 'undefined' && !window.isSecureContext) {
+        console.warn('Geolocation unavailable: insecure context');
+        // Surface a friendly message in UI while falling back
+        setState(prev => ({
+          ...prev,
+          error: "Precise location is blocked because this page isn't served over HTTPS. We'll estimate using your IP."
+        }));
+        resolve(null);
+        return;
+      }
+
       if (!navigator.geolocation) {
         resolve(null);
         return;
       }
+
+      // Preflight permission if supported to avoid prompting/empty errors
+      try {
+        const anyPerms = (navigator as any).permissions;
+        if (anyPerms?.query) {
+          const status = await anyPerms.query({ name: 'geolocation' as any });
+          if (status.state === 'denied') {
+            console.warn('Geolocation permission denied');
+            // Surface a friendly message in UI while falling back
+            setState(prev => ({
+              ...prev,
+              error: "You've blocked location access for this site. We'll estimate using your IP. You can re-enable it in your browser's site settings."
+            }));
+            resolve(null);
+            return;
+          }
+        }
+      } catch {/* ignore */}
 
       const timeoutId = setTimeout(() => {
         resolve(null);
@@ -149,13 +193,20 @@ export function useLocationDetection() {
               timezone: data.timezone || DEFAULT_LOCATION.timezone,
             });
           } catch (error) {
-            console.error('Browser location processing failed:', error);
+            console.error('Browser location processing failed:', formatGeoError(error));
             resolve(null);
           }
         },
         (error) => {
           clearTimeout(timeoutId);
-          console.error('Browser geolocation failed:', error);
+          console.error('Browser geolocation failed:', formatGeoError(error));
+          const code = (error as any)?.code;
+          if (code === 1 /* PERMISSION_DENIED */) {
+            setState(prev => ({
+              ...prev,
+              error: "You've blocked location access for this site. We'll estimate using your IP. You can re-enable it in your browser's site settings."
+            }));
+          }
           resolve(null);
         },
         {

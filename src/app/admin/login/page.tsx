@@ -25,50 +25,29 @@ export default function AdminLogin() {
   })
   const router = useRouter()
 
-  // Track reload attempts to prevent infinite loop
-  useEffect(() => {
-    // Check if we just reloaded due to 401 error
-    const reloadAttempt = sessionStorage.getItem('admin_login_reload_attempt')
-    if (reloadAttempt) {
-      const attemptData = JSON.parse(reloadAttempt)
-      const timeSinceAttempt = Date.now() - attemptData.timestamp
-      
-      // If reload happened within last 10 seconds, clear the flag
-      if (timeSinceAttempt < 10000) {
-        console.log('Page reloaded after 401 error, checking session...')
-        // Clear the flag after checking
-        sessionStorage.removeItem('admin_login_reload_attempt')
-      } else {
-        // Old attempt, clear it
-        sessionStorage.removeItem('admin_login_reload_attempt')
-      }
-    }
-  }, [])
-
-  // Auto-check for existing admin session on page load
+  // SIMPLIFIED: Single session check on mount (no complex reload tracking)
   useEffect(() => {
     const checkExistingSession = async () => {
       try {
-        console.log('Checking for existing admin session...')
+        console.log('🔍 Admin Login: Checking for existing admin session...')
         const user = await account.get()
         
         if (user) {
-          console.log('Found existing session for:', user.email)
+          console.log('✅ Admin Login: Found session for:', user.email)
           const userRole = user.prefs?.role || 'customer'
           
           if (userRole === 'admin') {
-            console.log('Admin session found, auto-redirecting to dashboard')
-            
-            // Use window.location.href for immediate redirect
-            window.location.href = '/admin'
+            console.log('✅ Admin Login: Admin session found, redirecting to dashboard')
+            // Use consistent redirect method
+            router.push('/admin')
             return
           } else {
-            console.log('User is not admin, clearing session')
+            console.log('⚠️ Admin Login: User is not admin, clearing session')
             await account.deleteSession('current')
           }
         }
       } catch (error) {
-        console.log('No existing session found')
+        console.log('ℹ️ Admin Login: No existing session found')
       } finally {
         setIsCheckingSession(false)
       }
@@ -85,6 +64,7 @@ export default function AdminLogin() {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
+    // SIMPLIFIED: Basic validation
     if (!formData.email || !formData.password) {
       setError("Please fill in all fields")
       return
@@ -99,88 +79,46 @@ export default function AdminLogin() {
     setError(null)
 
     try {
-      console.log('Starting login process for:', formData.email)
+      console.log('🚀 Admin Login: Starting login process for:', formData.email)
       
-      // First, ensure any existing session is cleared
+      // Clear any existing session first
       try {
         await account.deleteSession('current')
-        console.log('Cleared any existing session')
+        console.log('✅ Admin Login: Cleared existing session')
       } catch (error) {
-        // No existing session to clear, continue
-        console.log('No existing session to clear')
+        console.log('ℹ️ Admin Login: No existing session to clear')
       }
 
-      // Create email session with Appwrite
-      console.log('Creating email session...')
-      console.log('Using credentials:', { email: formData.email, passwordLength: formData.password.length })
-      
+      // Create new session with Appwrite
+      console.log('🔄 Admin Login: Creating email session...')
       const session = await account.createEmailPasswordSession(formData.email, formData.password)
-      console.log('Session created successfully:', session.$id)
+      console.log('✅ Admin Login: Session created successfully:', session.$id)
       
-      // Note: We trust the session creation and redirect immediately
-      // The admin layout will verify the user's role on the next page
-      // This prevents 401 errors that can occur when trying to get user data
-      // immediately after session creation due to timing issues
+      // Verify the session immediately
+      console.log('🔍 Admin Login: Verifying session...')
+      const user = await account.get()
       
-      console.log('Login successful, redirecting to dashboard...')
-      
-      // Keep loading state true during redirect
-      // Don't set isLoading to false, let the page redirect happen
-      
-      // Redirect immediately with a full page reload
-      // This ensures the session is properly loaded from cookies/storage
-      window.location.href = '/admin'
-      
-      // Return to prevent any code after this from executing
-      return
+      if (user && user.prefs?.role === 'admin') {
+        console.log('✅ Admin Login: Admin role verified, redirecting to dashboard')
+        // Use consistent redirect method (no page reload)
+        router.push('/admin')
+      } else {
+        console.log('❌ Admin Login: User found but not admin role')
+        throw new Error('Access denied. Admin privileges required.')
+      }
       
     } catch (err: any) {
-      console.error("Login error:", err)
-      console.error("Error code:", err?.code)
-      console.error("Error type:", err?.type)
+      console.error('❌ Admin Login: Login error details:', {
+        message: err?.message,
+        code: err?.code,
+        type: err?.type,
+        timestamp: new Date().toISOString()
+      })
       
       let errorMessage = "Login failed. Please check your credentials and try again."
       
       if (err?.code === 401) {
-        // Check if we already tried reloading
-        const reloadAttempt = sessionStorage.getItem('admin_login_reload_attempt')
-        
-        if (reloadAttempt) {
-          // Already tried reload, show actual error
-          const attemptData = JSON.parse(reloadAttempt)
-          const timeSinceAttempt = Date.now() - attemptData.timestamp
-          
-          if (timeSinceAttempt < 10000) {
-            // Recent reload attempt failed, show real error
-            console.log('Reload attempt failed, showing error')
-            sessionStorage.removeItem('admin_login_reload_attempt')
-            errorMessage = "Invalid email or password. Please check your credentials."
-            setError(errorMessage)
-            setIsLoading(false)
-            return
-          }
-        }
-        
-        // First 401 error - attempt automatic retry with page reload
-        console.log('401 error detected - attempting automatic retry with page reload...')
-        
-        errorMessage = "تم إنشاء الجلسة، جاري إعادة تحميل الصفحة..."
-        setError(errorMessage)
-        
-        // Save reload attempt to sessionStorage
-        sessionStorage.setItem('admin_login_reload_attempt', JSON.stringify({
-          timestamp: Date.now(),
-          email: formData.email
-        }))
-        
-        // Wait a moment to show the message, then reload
-        setTimeout(() => {
-          console.log('Reloading page to complete login...')
-          window.location.reload()
-        }, 1500)
-        
-        // Keep loading state true during reload
-        return
+        errorMessage = "Invalid email or password. Please check your credentials."
       } else if (err?.code === 429) {
         errorMessage = "Too many login attempts. Please try again later."
       } else if (err?.message) {

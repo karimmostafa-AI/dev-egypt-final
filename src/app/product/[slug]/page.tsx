@@ -13,6 +13,7 @@ import ProductErrorBoundary from '../../../components/ui/ProductErrorBoundary';
 import Image from 'next/image';
 import { Button } from '../../../components/ui/button';
 import { useProductDetails } from '../../../hooks/useProductDetails';
+import { useInventoryRecalc } from '../../../hooks/useInventoryRecalc';
 import { PageLoadingSpinner, ProgressiveLoader } from '../../../components/ui/LoadingStates';
 import ProductImageGallery from '../../../components/ui/ProductImageGallery';
 import ProductVariations, { VariationGroup, VariationOption } from '../../../components/ui/ProductVariations';
@@ -138,6 +139,10 @@ export default function ProductDetailPage() {
 
   // Memoize the product to prevent unnecessary re-renders
   const memoizedProduct = useMemo(() => product, [(product as any)?.$id || (product as any)?.id, product?.name, product?.price]);
+
+  // Auto-recalculate inventory every configured interval (default 30s)
+  const productIdForRecalc = (dynamicProduct as any)?.id || (dynamicProduct as any)?.$id || (product as any)?.id || (product as any)?.$id;
+  useInventoryRecalc(productIdForRecalc);
 
   // Auto-select first available color and size when product loads
   useEffect(() => {

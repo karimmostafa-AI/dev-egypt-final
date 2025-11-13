@@ -70,6 +70,10 @@ const ProductCard: React.FC<ProductCardProps> = ({
   const backImageRef = useRef<HTMLImageElement>(null);
   const router = useRouter();
 
+  // Trigger lightweight auto-recalc when card becomes visible or hovered
+  // Uses a 30s cooldown per card to avoid excessive calls
+  useVisibleInventoryRecalc(cardRef as any, product.$id)
+
   // Use wishlist functionality
   const { isInWishlist, toggleWishlist, wishlist } = useWishlist(true);
   const isWishlisted = isInWishlist(product.$id);
@@ -200,7 +204,7 @@ const ProductCard: React.FC<ProductCardProps> = ({
 
   return (
     <div className={`group relative ${className}`}>
-      {/* New/Featured Badges */}
+      {/* New/Featured/Stock Badges */}
       <div className="absolute top-3 left-3 z-10 flex flex-col space-y-2">
         {product.isNew && (
           <span className="px-2 py-1 bg-green-500 text-white text-xs font-medium rounded-full">
@@ -212,6 +216,19 @@ const ProductCard: React.FC<ProductCardProps> = ({
             Featured
           </span>
         )}
+        {(() => {
+          const stock = (product as any).available_units ?? product.stock ?? product.units;
+          const n = typeof stock === 'string' ? parseFloat(stock) : (stock || 0);
+          if (n <= 0) return (
+            <span className="px-2 py-1 bg-red-600 text-white text-xs font-medium rounded-full">Out</span>
+          );
+          if (n <= 5) return (
+            <span className="px-2 py-1 bg-yellow-500 text-white text-xs font-medium rounded-full">Low</span>
+          );
+          return (
+            <span className="px-2 py-1 bg-emerald-600 text-white text-xs font-medium rounded-full">In stock</span>
+          );
+        })()}
       </div>
 
       {/* Wishlist Button */}

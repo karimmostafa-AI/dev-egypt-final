@@ -6,7 +6,7 @@ const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || 'https://cloud.app
 const projectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || '';
 
 // Initialize client with validation
-let client = new Client();
+const client = new Client();
 
 // Function to create/recreate client (useful after login)
 export const createClient = () => {
@@ -117,6 +117,10 @@ export const CUSTOMERS_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_CUSTOMER
 export const CATEGORIES_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_CATEGORIES_COLLECTION_ID || 'categories';
 export const SETTINGS_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_SETTINGS_COLLECTION_ID || 'settings';
 export const USERS_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_USERS_COLLECTION_ID || 'users';
+// Additional collection IDs based on exported Appwrite schema
+export const PRODUCT_VARIATIONS_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_PRODUCT_VARIATIONS_COLLECTION_ID || 'product_variations';
+export const PRODUCT_IMAGES_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_PRODUCT_IMAGES_COLLECTION_ID || 'product_images';
+export const INVENTORY_TRANSACTIONS_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_INVENTORY_TRANSACTIONS_COLLECTION_ID || 'inventory_transactions';
 
 // Storage Bucket IDs
 export const PRODUCT_IMAGES_BUCKET_ID = process.env.NEXT_PUBLIC_APPWRITE_PRODUCT_IMAGES_BUCKET_ID || 'product-images';

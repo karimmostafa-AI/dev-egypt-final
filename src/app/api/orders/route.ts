@@ -4,6 +4,7 @@ import { databases, DATABASE_ID, ORDERS_COLLECTION_ID, createServerClient } from
 import { ID } from 'appwrite';
 import { Databases } from 'node-appwrite';
 import { emailService } from '../../../lib/email-service';
+import { InventoryService, CartItem, OrderItem } from '@/lib/services/InventoryService';
 
 // GET /api/orders - Get user's orders
 export const GET = withAuth(async (request: NextRequest, user) => {
@@ -89,8 +90,48 @@ export const POST = async (request: NextRequest) => {
     console.log('📍 Creating order for customer:', customerId);
     console.log('🏷️ Brand ID:', brand_id || '(none)');
 
+    // ===== STEP 1: VALIDATE STOCK AVAILABILITY =====
+    console.log('🔍 Step 1: Checking stock availability...');
+    
+    // Initialize inventory service
+    const serverClient = createServerClient();
+    const serverDatabases = new Databases(serverClient);
+    const inventoryService = new InventoryService(serverDatabases);
+    
+    // Convert order items to cart items for validation
+    const cartItems: CartItem[] = items.map((item: any) => ({
+      productId: item.product_id || item.productId,
+      variationId: item.variation_id || item.variationId,
+      quantity: item.quantity,
+      name: item.name || item.productName,
+      price: item.price
+    }));
+    
+    // Check stock availability
+    const stockCheck = await inventoryService.checkStockAvailability(cartItems);
+    
+    if (!stockCheck.available) {
+      console.warn('⚠️ Insufficient stock for order');
+      console.warn('Unavailable items:', stockCheck.unavailableItems);
+      
+      return NextResponse.json(
+        {
+          error: 'Insufficient stock',
+          message: 'Some items in your cart are no longer available in the requested quantity.',
+          unavailableItems: stockCheck.unavailableItems.map(item => ({
+            name: item.name,
+            requested: item.requested,
+            available: item.available
+          }))
+        },
+        { status: 400 }
+      );
+    }
+    
+    console.log('✅ Stock availability confirmed');
+
     // Calculate totals
-    const calculatedSubtotal = subtotal || items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const calculatedSubtotal = subtotal || items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
     const totalAmount = calculatedSubtotal + shippingCost + taxAmount - discountAmount;
     
     // Map payment method to Appwrite schema enum values
@@ -137,9 +178,8 @@ export const POST = async (request: NextRequest) => {
       // - notes, tracking_number, carrier (don't exist)
     };
 
-    // Create order in Appwrite database
-    const serverClient = createServerClient();
-    const serverDatabases = new Databases(serverClient);
+    // ===== STEP 2: CREATE ORDER =====
+    console.log('📝 Step 2: Creating order in database...');
     
     const order = await serverDatabases.createDocument(
       DATABASE_ID,
@@ -148,9 +188,56 @@ export const POST = async (request: NextRequest) => {
       orderData
     );
 
-    console.log('Order created successfully:', order.$id);
+    console.log('✅ Order created successfully:', order.$id);
+    
+    // ===== STEP 3: RESERVE/DEDUCT STOCK =====
+    console.log('📦 Step 3: Deducting stock from inventory...');
+    
+    try {
+      // Convert items to OrderItem format for inventory service
+      const orderItems: OrderItem[] = items.map((item: any) => ({
+        product_id: item.product_id || item.productId,
+        variation_id: item.variation_id || item.variationId,
+        quantity: item.quantity,
+        name: item.name || item.productName,
+        price: item.price
+      }));
+      
+      // Reserve stock for this order
+      await inventoryService.reserveStock(
+        order.$id,
+        orderItems,
+        customerId || 'guest'
+      );
+      
+      console.log('✅ Stock deducted successfully');
+    } catch (stockError) {
+      // If stock deduction fails, delete the order (rollback)
+      console.error('❌ Stock deduction failed, rolling back order...', stockError);
+      
+      try {
+        await serverDatabases.deleteDocument(
+          DATABASE_ID,
+          ORDERS_COLLECTION_ID,
+          order.$id
+        );
+        console.log('✅ Order rolled back successfully');
+      } catch (rollbackError) {
+        console.error('❌ Failed to rollback order:', rollbackError);
+      }
+      
+      return NextResponse.json(
+        {
+          error: 'Failed to process order',
+          message: 'Order could not be completed due to inventory issues. Please try again.',
+          details: stockError instanceof Error ? stockError.message : 'Unknown error'
+        },
+        { status: 500 }
+      );
+    }
 
-    // Send order confirmation email
+    // ===== STEP 4: SEND CONFIRMATION EMAIL =====
+    console.log('📧 Step 4: Sending order confirmation email...');
     try {
       // For guest users, we need customer email from the request
       // For authenticated users, we would fetch it from the user data

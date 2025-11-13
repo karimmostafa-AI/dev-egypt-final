@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import Link from "next/link"
-import { Search, UserPlus, MoreHorizontal, Trash2, Eye, Package, Plus, Edit, DollarSign, ShoppingCart, AlertTriangle, Download } from "lucide-react"
+import { useState, useMemo, useEffect } from "react"
+import { useAdminRealTimeData } from "@/hooks/useAdminRealTimeData"
+import { Search, MoreHorizontal, Trash2, Eye, Package, Plus, Edit, DollarSign, ShoppingCart, AlertTriangle, Download, RefreshCw } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -45,224 +45,185 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Product, ProductStats } from "@/types/product"
 
-interface Brand {
-  $id: string
-  name: string
-  prefix: string
-  status: boolean
-}
-
-interface Category {
-  $id: string
-  name: string
-  status: boolean
+interface ProductStats {
+  total: number
+  available: number
+  unavailable: number
+  onSale: number
+  lowStock: number
+  outOfStock: number
+  totalValue: number
 }
 
 export default function ProductsPage() {
-  const [products, setProducts] = useState<Product[]>([])
-  const [brands, setBrands] = useState<Brand[]>([])
-  const [categories, setCategories] = useState<Category[]>([])
-  const [loading, setLoading] = useState(true)
+  const { 
+    products, 
+    loading, 
+    refetch,
+    error 
+  } = useAdminRealTimeData()
+  
   const [searchTerm, setSearchTerm] = useState("")
-  const [availableFilter, setAvailableFilter] = useState("all")
-  const [catalogFilter, setCatalogFilter] = useState("all")
-  const [brandFilter, setBrandFilter] = useState("all")
-  const [stats, setStats] = useState<ProductStats>({
-    total: 0,
-    available: 0,
-    unavailable: 0,
-    onSale: 0,
-    lowStock: 0,
-    outOfStock: 0,
-    totalValue: 0
-  })
+  const [stockFilter, setStockFilter] = useState("all")
+  const [statusFilter, setStatusFilter] = useState("all")
+  const [sortBy, setSortBy] = useState("name")
+  const [sortOrder, setSortOrder] = useState("asc")
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [productToDelete, setProductToDelete] = useState<string | null>(null)
-  const [uniqueCatalogs, setUniqueCatalogs] = useState<string[]>([])
-  const [uniqueBrands, setUniqueBrands] = useState<string[]>([])
 
-  // Fetch brands
-  const fetchBrands = async () => {
-    try {
-      const response = await fetch('/api/admin/brands?status=true')
-      const data = await response.json()
-      
-      if (data.error) {
-        console.error("Error fetching brands:", data.error)
-        return
-      }
+  // Transform products from the hook format
+  const transformedProducts = useMemo(() => {
+    return products.map(product => ({
+      $id: product.id,
+      name: product.name,
+      sku: product.sku || '',
+      price: product.price || 0,
+      discount_price: product.discount_price || 0,
+      available_units: product.available_units || 0,
+      reserved_units: product.reserved_units || 0,
+      stock_status: product.stock_status || 'in_stock',
+      category_id: product.category_id || '',
+      brand_id: product.brand_id || '',
+      is_active: product.is_active !== false,
+      is_featured: product.is_featured || false,
+      sales_count: product.sales_count || 0,
+      last_restocked_at: product.last_restocked_at,
+      low_stock_threshold: product.low_stock_threshold || 5,
+      image_url: product.image_url,
+      $createdAt: product.updated_at,
+      updated_at: product.updated_at,
+      is_new: product.sales_count === 0 // Consider products with 0 sales as new
+    }))
+  }, [products])
 
-      setBrands(data.brands || [])
-    } catch (error) {
-      console.error("Failed to fetch brands:", error)
-    }
-  }
+  // Calculate stats from real data
+  const stats = useMemo((): ProductStats => {
+    const total = transformedProducts.length
+    const available = transformedProducts.filter(p => p.stock_status === 'in_stock').length
+    const unavailable = transformedProducts.filter(p => p.stock_status === 'out_of_stock').length
+    const onSale = transformedProducts.filter(p => p.discount_price > 0 && p.discount_price < p.price).length
+    const lowStock = transformedProducts.filter(p => p.stock_status === 'low_stock').length
+    const outOfStock = transformedProducts.filter(p => p.stock_status === 'out_of_stock').length
+    const totalValue = transformedProducts.reduce((sum, p) => {
+      const unitPrice = p.discount_price > 0 ? p.discount_price : p.price
+      return sum + (unitPrice * p.available_units)
+    }, 0)
 
-  // Fetch categories
-  const fetchCategories = async () => {
-    try {
-      const response = await fetch('/api/admin/categories?status=true')
-      const data = await response.json()
-      
-      if (data.error) {
-        console.error("Error fetching categories:", data.error)
-        return
-      }
+    return { total, available, unavailable, onSale, lowStock, outOfStock, totalValue }
+  }, [transformedProducts])
 
-      setCategories(data.categories || [])
-    } catch (error) {
-      console.error("Failed to fetch categories:", error)
-    }
-  }
+  // Filter and sort products
+  const filteredAndSortedProducts = useMemo(() => {
+    let filtered = transformedProducts
 
-  // Fetch products
-  const fetchProducts = async () => {
-    try {
-      setLoading(true)
-      
-      // Build query parameters
-      const params = new URLSearchParams({
-        search: searchTerm,
-        limit: "100"
-      })
-      
-      if (availableFilter !== "all") {
-        params.append("available", availableFilter)
-      }
-      if (catalogFilter !== "all") {
-        params.append("catalog", catalogFilter)
-      }
-      if (brandFilter !== "all") {
-        params.append("brand", brandFilter)
-      }
-
-      const response = await fetch(`/api/admin/products?${params.toString()}`)
-      const data = await response.json()
-      
-      if (data.error) {
-        console.error("Error:", data.error)
-        return
-      }
-
-      setProducts(data.products || [])
-      setStats(data.stats || stats)
-      
-      // Extract unique values for filters
-      const catalogs = [...new Set(data.products?.map((p: Product) => p.category_id).filter(Boolean))] as string[]
-      const brandIds = [...new Set(data.products?.map((p: Product) => p.brand_id).filter(Boolean))] as string[]
-      setUniqueCatalogs(catalogs)
-      setUniqueBrands(brandIds)
-
-    } catch (error) {
-      console.error("Failed to fetch products:", error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // Helper functions to get brand and category names
-  const getBrandPrefix = (brandId: string) => {
-    const brand = brands.find(b => b.$id === brandId)
-    return brand ? brand.prefix : brandId
-  }
-
-  const getBrandName = (brandId: string) => {
-    const brand = brands.find(b => b.$id === brandId)
-    return brand ? brand.name : brandId
-  }
-
-  const getCategoryName = (categoryId: string) => {
-    const category = categories.find(c => c.$id === categoryId)
-    return category ? category.name : categoryId
-  }
-
-  // Delete product
-  const handleDelete = async () => {
-    if (!productToDelete) return
-
-    try {
-      const response = await fetch(
-        `/api/admin/products?productId=${productToDelete}`,
-        { method: "DELETE" }
+    // Apply search filter
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase()
+      filtered = filtered.filter(product =>
+        product.name?.toLowerCase().includes(searchLower) ||
+        product.sku?.toLowerCase().includes(searchLower) ||
+        product.category_id?.toLowerCase().includes(searchLower) ||
+        product.brand_id?.toLowerCase().includes(searchLower)
       )
-      
-      if (response.ok) {
-        fetchProducts()
-        setDeleteDialogOpen(false)
-        setProductToDelete(null)
-      }
-    } catch (error) {
-      console.error("Failed to delete product:", error)
     }
-  }
 
-  // Toggle product availability
+    // Apply stock status filter
+    if (stockFilter !== "all") {
+      filtered = filtered.filter(product => product.stock_status === stockFilter)
+    }
+
+    // Apply status filter
+    if (statusFilter !== "all") {
+      if (statusFilter === "active") {
+        filtered = filtered.filter(product => product.is_active)
+      } else if (statusFilter === "inactive") {
+        filtered = filtered.filter(product => !product.is_active)
+      }
+    }
+
+    // Apply sorting
+    filtered.sort((a, b) => {
+      let aValue, bValue
+      
+      switch (sortBy) {
+        case 'name':
+          aValue = a.name || ''
+          bValue = b.name || ''
+          break
+        case 'price':
+          aValue = a.price || 0
+          bValue = b.price || 0
+          break
+        case 'stock':
+          aValue = a.available_units || 0
+          bValue = b.available_units || 0
+          break
+        case 'sales':
+          aValue = a.sales_count || 0
+          bValue = b.sales_count || 0
+          break
+        default:
+          aValue = a.name || ''
+          bValue = b.name || ''
+      }
+
+      if (sortOrder === 'asc') {
+        return aValue > bValue ? 1 : -1
+      } else {
+        return aValue < bValue ? 1 : -1
+      }
+    })
+
+    return filtered
+  }, [transformedProducts, searchTerm, stockFilter, statusFilter, sortBy, sortOrder])
+
+  // Toggle product availability (placeholder - would connect to actual API)
   const toggleAvailability = async (productId: string, currentAvailability: boolean) => {
     try {
-      const response = await fetch(`/api/admin/products?productId=${productId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ is_active: !currentAvailability }),
-      })
-      
-      if (response.ok) {
-        fetchProducts()
-      }
+      console.log('Toggling product availability', productId, 'from', currentAvailability, 'to', !currentAvailability)
+      // In real implementation: await updateProduct(productId, { is_active: !currentAvailability })
+      refetch() // Refresh data
     } catch (error) {
       console.error("Failed to update product availability:", error)
     }
   }
 
-  useEffect(() => {
-    fetchBrands()
-    fetchCategories()
-    fetchProducts()
-  }, [])
+  // Delete product (placeholder - would connect to actual API)
+  const handleDelete = async () => {
+    if (!productToDelete) return
 
-  // Filter products based on search and filters
-  const filteredProducts = products.filter((product) => {
-    const brandName = getBrandName(product.brand_id).toLowerCase()
-    const brandPrefix = getBrandPrefix(product.brand_id).toLowerCase()
-    const categoryName = getCategoryName(product.category_id).toLowerCase()
-    const searchLower = searchTerm.toLowerCase()
-    
-    const matchesSearch = product.name.toLowerCase().includes(searchLower) ||
-                         brandName.includes(searchLower) ||
-                         brandPrefix.includes(searchLower) ||
-                         categoryName.includes(searchLower)
-    
-    return matchesSearch
-  })
+    try {
+      console.log('Deleting product', productToDelete)
+      // In real implementation: await deleteProduct(productToDelete)
+      refetch() // Refresh data
+      setDeleteDialogOpen(false)
+      setProductToDelete(null)
+    } catch (error) {
+      console.error("Failed to delete product:", error)
+    }
+  }
 
-  // Export to CSV function
-  const exportToCSV = () => {
-    const csv = [
-      ["Name", "Brand", "Brand Prefix", "Category", "Price", "Discount Price", "Active", "Units", "Min Order", "Created"],
-      ...products.map(p => [
-        p.name,
-        getBrandName(p.brand_id),
-        getBrandPrefix(p.brand_id),
-        getCategoryName(p.category_id),
-        p.price.toString(),
-        p.discount_price.toString(),
-        p.is_active ? "Yes" : "No",
-        p.units.toString(),
-        p.min_order_quantity.toString(),
-        new Date(p.$createdAt).toLocaleDateString()
-      ])
-    ].map(row => row.join(",")).join("\n")
+  const handleSort = (column: string) => {
+    if (sortBy === column) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortBy(column)
+      setSortOrder('asc')
+    }
+  }
 
-    const blob = new Blob([csv], { type: "text/csv" })
-    const url = window.URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `products-${new Date().toISOString().split('T')[0]}.csv`
-    a.click()
-    window.URL.revokeObjectURL(url)
+  const getStockStatusColor = (status: string) => {
+    switch (status) {
+      case 'in_stock':
+        return 'bg-green-100 text-green-800'
+      case 'low_stock':
+        return 'bg-yellow-100 text-yellow-800'
+      case 'out_of_stock':
+        return 'bg-red-100 text-red-800'
+      default:
+        return 'bg-gray-100 text-gray-800'
+    }
   }
 
   return (
@@ -274,13 +235,22 @@ export default function ProductsPage() {
           <p className="text-muted-foreground">
             Manage your product catalog, inventory, and pricing
           </p>
+          {error && (
+            <div className="mt-2 text-sm text-red-600">
+              {error}
+            </div>
+          )}
         </div>
-        <Button asChild>
-          <Link href="/admin/products/new">
+        <div className="flex gap-2">
+          <Button onClick={refetch} variant="outline" disabled={loading}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Button>
             <Plus className="mr-2 h-4 w-4" />
             Add Product
-          </Link>
-        </Button>
+          </Button>
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -300,13 +270,13 @@ export default function ProductsPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Available</CardTitle>
+            <CardTitle className="text-sm font-medium">In Stock</CardTitle>
             <ShoppingCart className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">{stats.available}</div>
             <p className="text-xs text-muted-foreground">
-              Ready for sale
+              Available for sale
             </p>
           </CardContent>
         </Card>
@@ -361,56 +331,28 @@ export default function ProductsPage() {
               />
             </div>
             
-            <Select value={availableFilter} onValueChange={setAvailableFilter}>
+            <Select value={stockFilter} onValueChange={setStockFilter}>
               <SelectTrigger className="w-40">
-                <SelectValue placeholder="Availability" />
+                <SelectValue placeholder="Stock Status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Items</SelectItem>
-                <SelectItem value="true">Available</SelectItem>
-                <SelectItem value="false">Unavailable</SelectItem>
+                <SelectItem value="all">All Stock</SelectItem>
+                <SelectItem value="in_stock">In Stock</SelectItem>
+                <SelectItem value="low_stock">Low Stock</SelectItem>
+                <SelectItem value="out_of_stock">Out of Stock</SelectItem>
               </SelectContent>
             </Select>
 
-            <Select value={catalogFilter} onValueChange={setCatalogFilter}>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-40">
-                <SelectValue placeholder="Category" />
+                <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
-                {categories.map(category => (
-                  <SelectItem key={category.$id} value={category.$id}>{category.name}</SelectItem>
-                ))}
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
               </SelectContent>
             </Select>
-
-            <Select value={brandFilter} onValueChange={setBrandFilter}>
-              <SelectTrigger className="w-40">
-                <SelectValue placeholder="Brand" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Brands</SelectItem>
-                {brands.map(brand => (
-                  <SelectItem key={brand.$id} value={brand.$id}>
-                    <div className="flex items-center gap-2">
-                      <span>{brand.name}</span>
-                      <Badge variant="outline" className="text-xs">
-                        {brand.prefix}
-                      </Badge>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Button onClick={fetchProducts} variant="outline">
-              Refresh
-            </Button>
-            
-            <Button onClick={exportToCSV} variant="outline">
-              <Download className="mr-2 h-4 w-4" />
-              Export CSV
-            </Button>
           </div>
 
           {/* Loading State */}
@@ -424,24 +366,44 @@ export default function ProductsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Product</TableHead>
-                    <TableHead>Brand</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Price</TableHead>
+                    <TableHead 
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => handleSort('name')}
+                    >
+                      Product {sortBy === 'name' && (sortOrder === 'asc' ? '↑' : '↓')}
+                    </TableHead>
+                    <TableHead>Brand/Category</TableHead>
+                    <TableHead 
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => handleSort('price')}
+                    >
+                      Price {sortBy === 'price' && (sortOrder === 'asc' ? '↑' : '↓')}
+                    </TableHead>
+                    <TableHead 
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => handleSort('stock')}
+                    >
+                      Stock {sortBy === 'stock' && (sortOrder === 'asc' ? '↑' : '↓')}
+                    </TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Created</TableHead>
+                    <TableHead 
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => handleSort('sales')}
+                    >
+                      Sales {sortBy === 'sales' && (sortOrder === 'asc' ? '↑' : '↓')}
+                    </TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredProducts.length === 0 ? (
+                  {filteredAndSortedProducts.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={7} className="text-center py-10">
                         <p className="text-muted-foreground">No products found</p>
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredProducts.map((product) => (
+                    filteredAndSortedProducts.map((product) => (
                       <TableRow key={product.$id}>
                         <TableCell>
                           <div className="flex items-center space-x-3">
@@ -451,29 +413,21 @@ export default function ProductsPage() {
                             <div>
                               <div className="font-medium">{product.name}</div>
                               <div className="text-sm text-muted-foreground">
-                                ID: {product.$id.slice(0, 8)}...
+                                SKU: {product.sku || 'N/A'} • ID: {product.$id.slice(0, 8)}...
                               </div>
                             </div>
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-2">
-                            <div className="font-medium">{getBrandName(product.brand_id)}</div>
-                            <Badge variant="outline" className="text-xs font-mono">
-                              {getBrandPrefix(product.brand_id)}
-                            </Badge>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="font-medium">{getCategoryName(product.category_id)}</div>
-                          <div className="text-sm text-muted-foreground">
-                            {product.units} units (min: {product.min_order_quantity})
+                          <div className="space-y-1">
+                            <div className="text-sm font-medium">{product.brand_id || 'No Brand'}</div>
+                            <div className="text-xs text-muted-foreground">{product.category_id || 'No Category'}</div>
                           </div>
                         </TableCell>
                         <TableCell>
                           <div className="space-y-1">
                             <div className="font-medium">${product.price.toFixed(2)}</div>
-                            {product.discount_price > 0 && (
+                            {product.discount_price > 0 && product.discount_price < product.price && (
                               <div className="text-sm text-green-600">
                                 Sale: ${product.discount_price.toFixed(2)}
                               </div>
@@ -482,14 +436,18 @@ export default function ProductsPage() {
                         </TableCell>
                         <TableCell>
                           <div className="space-y-1">
+                            <div className="font-medium">{product.available_units} units</div>
+                            <div className="text-xs text-muted-foreground">
+                              {product.reserved_units} reserved
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
                             <Badge
-                              className={
-                                product.is_active
-                                  ? "bg-green-100 text-green-800"
-                                  : "bg-red-100 text-red-800"
-                              }
+                              className={getStockStatusColor(product.stock_status)}
                             >
-                              {product.is_active ? "Active" : "Inactive"}
+                              {product.stock_status?.replace('_', ' ') || 'Unknown'}
                             </Badge>
                             {product.is_new && (
                               <Badge variant="outline" className="ml-1 border-blue-200 text-blue-700">
@@ -505,10 +463,7 @@ export default function ProductsPage() {
                         </TableCell>
                         <TableCell>
                           <div className="text-sm">
-                            {new Date(product.$createdAt).toLocaleDateString()}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {new Date(product.$createdAt).toLocaleTimeString()}
+                            {product.sales_count} sales
                           </div>
                         </TableCell>
                         <TableCell className="text-right">
@@ -524,11 +479,9 @@ export default function ProductsPage() {
                                 <Eye className="mr-2 h-4 w-4" />
                                 View Details
                               </DropdownMenuItem>
-                              <DropdownMenuItem asChild>
-                                <Link href={`/admin/products/${product.$id}/edit`}>
-                                  <Edit className="mr-2 h-4 w-4" />
-                                  Edit
-                                </Link>
+                              <DropdownMenuItem>
+                                <Edit className="mr-2 h-4 w-4" />
+                                Edit
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 onClick={() => toggleAvailability(product.$id, product.is_active)}

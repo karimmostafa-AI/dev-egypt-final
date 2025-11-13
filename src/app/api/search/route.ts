@@ -33,8 +33,6 @@ export async function GET(request: NextRequest) {
     }
 
     // Get additional filter data if requested
-    let categories = [];
-    let brands = [];
 
     if (category || brand || minPrice !== undefined || maxPrice !== undefined) {
       // Apply additional filters to search results

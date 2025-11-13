@@ -11,6 +11,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useNotifications } from '@/hooks/useNotifications';
 import { generateId, AriaHelpers, ScreenReaderAnnouncer } from '@/utils/accessibility';
 import LoginModal from '../ui/LoginModal';
+import { useRef } from 'react';
+import { useVisibleInventoryRecalc } from '@/hooks/useVisibleInventoryRecalc';
 
 const ProductCard = memo(({
   product,
@@ -148,6 +150,9 @@ const ProductCard = memo(({
     setImageError(true);
   }, []);
 
+  // Trigger lightweight auto-recalc when card becomes visible or hovered
+  useVisibleInventoryRecalc(cardRef, product.id);
+
   return (
     <article 
       ref={cardRef}
@@ -211,6 +216,22 @@ const ProductCard = memo(({
 
       {/* Product Info */}
       <div className="p-4">
+        {/* Stock badge */}
+        {(() => {
+          const stock = (product as any).available_units ?? (product as any).units ?? (product as any).stock;
+          const n = typeof stock === 'string' ? parseFloat(stock) : (stock || 0);
+          return (
+            <div className="mb-2">
+              {n <= 0 ? (
+                <span className="px-2 py-0.5 text-xs rounded bg-red-600 text-white">Out of stock</span>
+              ) : n <= 5 ? (
+                <span className="px-2 py-0.5 text-xs rounded bg-yellow-500 text-white">Low stock</span>
+              ) : (
+                <span className="px-2 py-0.5 text-xs rounded bg-emerald-600 text-white">In stock</span>
+              )}
+            </div>
+          );
+        })()}
         {/* Brand */}
         <div className="text-sm text-gray-600 mb-1">
           {product.brand}

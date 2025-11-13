@@ -1,9 +1,5 @@
 import { Databases, Storage, Query } from 'appwrite';
-import { DATABASE_ID, PRODUCTS_COLLECTION_ID } from '@/lib/appwrite';
-
-// New collection IDs for the updated schema
-const PRODUCT_VARIATIONS_COLLECTION_ID = 'product_variations';
-const PRODUCT_IMAGES_COLLECTION_ID = 'product_images';
+import { DATABASE_ID, PRODUCTS_COLLECTION_ID, PRODUCT_VARIATIONS_COLLECTION_ID, PRODUCT_IMAGES_COLLECTION_ID } from '@/lib/appwrite';
 
 // Domain models (clean data structures)
 export interface ProductImage {
@@ -36,6 +32,8 @@ export interface ProductVariation {
   sort_order: number;
 }
 
+export type StockStatus = 'in_stock' | 'low_stock' | 'out_of_stock';
+
 export interface ProductData {
   id: string;
   name: string;
@@ -53,6 +51,11 @@ export interface ProductData {
   images: ProductImage[];
   brand_id?: string;
   category_id?: string;
+  // Aggregates from schema (optional)
+  available_units?: number;
+  reserved_units?: number;
+  stock_status?: StockStatus;
+  last_restocked_at?: string;
   created_at: string;
   updated_at: string;
 }
@@ -618,6 +621,14 @@ export class ProductRepository implements IProductRepository {
       images = [];
     }
 
+    // Parse aggregate fields (strings → numbers)
+    const parseNum = (v: any): number | undefined => {
+      if (v === null || v === undefined) return undefined;
+      if (typeof v === 'number') return v;
+      const n = parseFloat(String(v));
+      return isNaN(n) ? undefined : n;
+    };
+
     return {
       id: document.$id,
       name: document.name,
@@ -635,6 +646,10 @@ export class ProductRepository implements IProductRepository {
       images,
       brand_id: document.brand_id,
       category_id: document.category_id,
+      available_units: parseNum(document.available_units),
+      reserved_units: parseNum(document.reserved_units),
+      stock_status: document.stock_status as StockStatus | undefined,
+      last_restocked_at: document.last_restocked_at,
       created_at: document.$createdAt,
       updated_at: document.$updatedAt
     };

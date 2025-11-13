@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Test Live Visitors</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .card {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+    }
+    button {
+      background: #0070f3;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover {
+      background: #0051cc;
+    }
+    pre {
+      background: #f0f0f0;
+      padding: 15px;
+      border-radius: 5px;
+      overflow-x: auto;
+    }
+    .success { color: #16a34a; font-weight: bold; }
+    .error { color: #dc2626; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>🔴 Live Visitors Test</h1>
+  
+  <div class="card">
+    <h2>Step 1: Send Visitor Data</h2>
+    <button onclick="sendVisitorData()">📤 Track Visitor</button>
+    <pre id="trackResult">Click the button to track a visitor...</pre>
+  </div>
+
+  <div class="card">
+    <h2>Step 2: Fetch Live Visitors</h2>
+    <button onclick="fetchLiveVisitors()">🔍 Get Live Visitors</button>
+    <pre id="fetchResult">Click the button to fetch live visitors...</pre>
+  </div>
+
+  <div class="card">
+    <h2>Step 3: Auto-refresh</h2>
+    <button onclick="startAutoRefresh()">🔄 Start Auto-Refresh (every 5s)</button>
+    <button onclick="stopAutoRefresh()">⏸️ Stop</button>
+    <pre id="autoResult">Not started...</pre>
+  </div>
+
+  <script>
+    let intervalId = null;
+
+    async function sendVisitorData() {
+      const result = document.getElementById('trackResult');
+      result.textContent = '⏳ Sending...';
+      
+      try {
+        const response = await fetch('/api/analytics/live-visitor', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            visitor_id: 'test_visitor_' + Date.now(),
+            session_id: 'test_session_' + Date.now(),
+            current_page: '/test',
+            device_type: 'desktop',
+            browser: 'Chrome',
+            os: 'Windows',
+            screen_resolution: '1920x1080',
+            entered_at: new Date().toISOString(),
+            last_seen_at: new Date().toISOString(),
+          })
+        });
+        
+        const data = await response.json();
+        result.innerHTML = `<span class="success">✅ Success!</span>\n${JSON.stringify(data, null, 2)}`;
+      } catch (error) {
+        result.innerHTML = `<span class="error">❌ Error:</span>\n${error.message}`;
+      }
+    }
+
+    async function fetchLiveVisitors() {
+      const result = document.getElementById('fetchResult');
+      result.textContent = '⏳ Fetching...';
+      
+      try {
+        const response = await fetch('/api/analytics/live-visitors');
+        const data = await response.json();
+        
+        if (data.visitors && data.visitors.length > 0) {
+          result.innerHTML = `<span class="success">✅ Found ${data.total} visitor(s)</span>\n${JSON.stringify(data, null, 2)}`;
+        } else {
+          result.innerHTML = `<span class="error">⚠️ No visitors found</span>\n${JSON.stringify(data, null, 2)}`;
+        }
+      } catch (error) {
+        result.innerHTML = `<span class="error">❌ Error:</span>\n${error.message}`;
+      }
+    }
+
+    function startAutoRefresh() {
+      if (intervalId) {
+        alert('Auto-refresh already running!');
+        return;
+      }
+      
+      const result = document.getElementById('autoResult');
+      fetchLiveVisitors();
+      
+      intervalId = setInterval(() => {
+        const timestamp = new Date().toLocaleTimeString();
+        result.textContent = `🔄 Refreshing at ${timestamp}...`;
+        fetchLiveVisitors();
+      }, 5000);
+      
+      result.textContent = '✅ Auto-refresh started (every 5 seconds)';
+    }
+
+    function stopAutoRefresh() {
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+        document.getElementById('autoResult').textContent = '⏸️ Auto-refresh stopped';
+      }
+    }
+  </script>
+</body>
+</html>
