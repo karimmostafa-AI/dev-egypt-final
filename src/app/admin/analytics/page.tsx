@@ -11,12 +11,7 @@ import { TrafficSourcesChart } from '@/components/analytics/TrafficSourcesChart'
 import { RecentOrdersTable } from '@/components/analytics/RecentOrdersTable'
 import { LiveVisitorsWidget } from '@/components/analytics/LiveVisitorsWidget'
 import { TimeRange } from '@/types/analytics'
-import {
-  mockOrdersByChannel,
-  mockCustomerGrowth,
-  mockTrafficSources,
-  mockRecentOrders,
-} from '@/lib/mockData'
+// Removed mock data imports - now using real data from API
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2, AlertCircle } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -50,6 +45,31 @@ interface AnalyticsData {
     paymentMethodDistribution: Array<{
       method: string
       count: number
+    }>
+    ordersByChannel?: Array<{
+      channel: string
+      orders: number
+      revenue: number
+      percentage: number
+    }>
+    customerGrowth?: Array<{
+      date: string
+      newCustomers: number
+      returningCustomers: number
+      totalCustomers: number
+    }>
+    trafficSources?: Array<{
+      source: string
+      visits: number
+      conversions: number
+      conversionRate: number
+    }>
+    recentOrders?: Array<{
+      id: string
+      customer: string
+      total: number
+      status: 'pending' | 'processing' | 'completed' | 'cancelled'
+      date: string
     }>
   }
   insights: {
@@ -201,8 +221,12 @@ export default function AnalyticsPage() {
             <SalesChart data={salesData} />
           </div>
 
-          <OrdersByChannelChart data={mockOrdersByChannel} />
-          <CustomersChart data={mockCustomerGrowth} />
+          <OrdersByChannelChart 
+            data={analyticsData.charts.ordersByChannel || []} 
+          />
+          <CustomersChart 
+            data={analyticsData.charts.customerGrowth || []} 
+          />
         </div>
 
         {/* Additional Charts */}
@@ -210,11 +234,15 @@ export default function AnalyticsPage() {
           <div className="lg:col-span-2">
             <TopProductsChart data={productPerformance} />
           </div>
-          <TrafficSourcesChart data={mockTrafficSources} />
+          <TrafficSourcesChart 
+            data={analyticsData.charts.trafficSources || []} 
+          />
         </div>
 
         {/* Recent Orders Table */}
-        <RecentOrdersTable data={mockRecentOrders} />
+        <RecentOrdersTable 
+          data={analyticsData.charts.recentOrders || []} 
+        />
 
         {/* Analytics Insights */}
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">

@@ -88,10 +88,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, action: 'session_ended' })
     }
 
-    // Upsert live visitor
-    await upsertLiveVisitor(visitorData)
+    // Upsert live visitor (non-blocking - don't fail request if this fails)
+    try {
+      await upsertLiveVisitor(visitorData)
+    } catch (error) {
+      // Log but don't throw - live visitor tracking is non-critical
+      console.error('Live visitor tracking failed (non-critical):', error)
+    }
     
-    // Update or create session tracking
+    // Update or create session tracking (non-blocking)
     await updateSessionTracking(payload.session_id, visitorData)
 
     return NextResponse.json({ 

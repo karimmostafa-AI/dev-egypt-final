@@ -125,6 +125,46 @@ export async function createSessionTracking(data: {
 /**
  * Live Visitors - Real-time tracking
  */
+/**
+ * Retry helper with exponential backoff
+ */
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries = 3,
+  baseDelay = 1000
+): Promise<T> {
+  let lastError: Error | null = null
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn()
+    } catch (error: any) {
+      lastError = error
+      
+      if (error?.code === 'UND_ERR_CONNECT_TIMEOUT' || error?.code === 'UND_ERR_SOCKET') {
+        // Connection errors - retry with exponential backoff
+        if (attempt < maxRetries - 1) {
+          const delay = baseDelay * Math.pow(2, attempt)
+          await new Promise(resolve => setTimeout(resolve, delay))
+          continue
+        }
+      } else if (error?.code === 'document_not_found' || error?.code === 'collection_not_found') {
+        // Don't retry on not found errors
+        throw error
+      } else {
+        // Other errors - retry with exponential backoff
+        if (attempt < maxRetries - 1) {
+          const delay = baseDelay * Math.pow(2, attempt)
+          await new Promise(resolve => setTimeout(resolve, delay))
+          continue
+        }
+      }
+    }
+  }
+  
+  throw lastError || new Error('Operation failed after retries')
+}
+
 export async function upsertLiveVisitor(data: {
   visitor_id: string
   user_id?: string
@@ -141,51 +181,81 @@ export async function upsertLiveVisitor(data: {
   entered_at?: Date | string
   last_seen_at: Date | string
 }) {
-  const { databases } = await createAdminClient()
-  
-  const record = {
-    visitor_id: data.visitor_id,
-    user_id: data.user_id,
-    session_id: data.session_id,
-    current_page: data.current_page,
-    device_type: data.device_type,
-    browser: data.browser,
-    os: data.os,
-    country: data.country,
-    city: data.city,
-    ip_address: data.ip_address,
-    referrer: data.referrer,
-    screen_resolution: data.screen_resolution,
-    entered_at: data.entered_at ? (typeof data.entered_at === 'string' ? data.entered_at : data.entered_at.toISOString()) : new Date().toISOString(),
-    last_seen_at: typeof data.last_seen_at === 'string' ? data.last_seen_at : data.last_seen_at.toISOString(),
-  }
-
-  // Try to update existing visitor, or create new
   try {
-    const existing = await databases.listDocuments(
-      DATABASE_ID,
-      LIVE_VISITORS_COLLECTION_ID,
-      [Query.equal('visitor_id', data.visitor_id)]
-    )
+    const { databases } = await createAdminClient()
+    
+    const record = {
+      visitor_id: data.visitor_id,
+      user_id: data.user_id,
+      session_id: data.session_id,
+      current_page: data.current_page,
+      device_type: data.device_type,
+      browser: data.browser,
+      os: data.os,
+      country: data.country,
+      city: data.city,
+      ip_address: data.ip_address,
+      referrer: data.referrer,
+      screen_resolution: data.screen_resolution,
+      entered_at: data.entered_at ? (typeof data.entered_at === 'string' ? data.entered_at : data.entered_at.toISOString()) : new Date().toISOString(),
+      last_seen_at: typeof data.last_seen_at === 'string' ? data.last_seen_at : data.last_seen_at.toISOString(),
+    }
 
-    if (existing.documents.length > 0) {
-      return await databases.updateDocument(
+    // Try to update existing visitor, or create new with retry logic
+    try {
+      const existing = await retryWithBackoff(async () => {
+        return await databases.listDocuments(
+          DATABASE_ID,
+          LIVE_VISITORS_COLLECTION_ID,
+          [Query.equal('visitor_id', data.visitor_id)]
+        )
+      }, 2, 500)
+
+      if (existing.documents.length > 0) {
+        return await retryWithBackoff(async () => {
+          return await databases.updateDocument(
+            DATABASE_ID,
+            LIVE_VISITORS_COLLECTION_ID,
+            existing.documents[0].$id,
+            record
+          )
+        }, 2, 500)
+      }
+    } catch (error: any) {
+      // Only create if document doesn't exist
+      if (error?.code === 'document_not_found' || error?.code === 'collection_not_found') {
+        // Document doesn't exist, proceed to create below
+      } else {
+        // Other errors - re-throw to outer catch
+        throw error
+      }
+    }
+    // Create new visitor with retry logic
+    return await retryWithBackoff(async () => {
+      return await databases.createDocument(
         DATABASE_ID,
         LIVE_VISITORS_COLLECTION_ID,
-        existing.documents[0].$id,
+        ID.unique(),
         record
       )
-    }
-  } catch (error) {
-    // Visitor doesn't exist, create new
+    }, 2, 500)
+  } catch (error: any) {
+    // Log error but don't throw - live visitor tracking is non-critical
+    console.error('Failed to upsert live visitor after retries:', {
+      error: error?.message,
+      code: error?.code,
+      visitor_id: data.visitor_id,
+      session_id: data.session_id
+    })
+    
+    // Return a mock response to prevent breaking the API
+    return {
+      $id: 'error',
+      $createdAt: new Date().toISOString(),
+      $updatedAt: new Date().toISOString(),
+      ...data
+    } as any
   }
-
-  return await databases.createDocument(
-    DATABASE_ID,
-    LIVE_VISITORS_COLLECTION_ID,
-    ID.unique(),
-    record
-  )
 }
 
 /**

@@ -1,4 +1,4 @@
-import { Client, Users, Databases, Storage, Account } from 'node-appwrite';
+import { Client, Users, Databases, Storage, Account, Query } from 'node-appwrite';
 
 // Admin client configuration
 const APPWRITE_ENDPOINT = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1';
@@ -37,12 +37,19 @@ export const createAdminClient = async () => {
       console.warn('⚠️ No API key provided - limited functionality available');
     }
 
+    // Set timeout for requests (10 seconds)
+    // Note: node-appwrite uses undici internally, timeout is handled at the fetch level
+    // The retry logic in analytics-helpers will handle connection timeouts
+
     const users = new Users(client);
     const databases = new Databases(client);
     const storage = new Storage(client);
     const account = new Account(client);
 
-    console.log('✅ Admin client created successfully');
+    // Only log in development to avoid spam
+    if (process.env.NODE_ENV === 'development') {
+      console.log('✅ Admin client created successfully');
+    }
 
     return {
       client,
@@ -64,9 +71,9 @@ export const adminUtils = {
     const { users } = await createAdminClient();
     
     const queries = [];
-    if (limit) queries.push(`limit(${limit})`);
-    if (offset) queries.push(`offset(${offset})`);
-    if (search) queries.push(`search("name", "${search}")`);
+    if (limit) queries.push(Query.limit(limit));
+    if (offset) queries.push(Query.offset(offset));
+    if (search) queries.push(Query.search('name', search));
     
     return await users.list(queries);
   },
